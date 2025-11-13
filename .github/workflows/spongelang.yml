@@ -39,19 +39,34 @@ jobs:
           cmake -B build -S .
           cmake --build build --config Release
 
-      # 원본 리포 Release 가져오기
-      - name: Get latest release of target repo
-        id: rel
-        uses: pozetroninc/github-action-get-latest-release@v1
+
+      # === 최신 릴리즈 asset URL 가져오기 (official) ===
+      - name: Get latest release asset URL
+        id: getasset
+        uses: actions/github-script@v7
         with:
-          repository: ${{ matrix.repo }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const repo = "${{ matrix.repo }}";
+            const [owner, name] = repo.split("/");
+            const rel = await github.rest.repos.getLatestRelease({
+              owner,
+              repo: name
+            });
 
-      - name: Download release asset
+            if (!rel.data.assets.length) {
+              core.setFailed("❌ No release assets found.");
+              return;
+            }
+
+            const asset = rel.data.assets[0];
+            core.setOutput("url", asset.browser_download_url);
+
+
+      - name: Download asset
         run: |
-          curl -L -o input.cpp "${{ steps.rel.outputs.assets_url }}"
+          curl -L -o input.cpp "${{ steps.getasset.outputs.url }}"
 
-      # ==== repo_name 추출 (핵심 FIX) ====
+      # === repo_name 추출 ===
       - name: Extract repo name
         id: namefix
         shell: bash
@@ -59,7 +74,8 @@ jobs:
           repo_name=$(basename "${{ matrix.repo }}")
           echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
 
-      # ===== Downward 변환 =====
+
+      # ===== Downward: Rust / NASM =====
       - name: Convert → Rust
         run: |
           ./build/spongelang --input input.cpp --output down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rs --mode rust
@@ -68,7 +84,8 @@ jobs:
         run: |
           ./build/spongelang --input input.cpp --output down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.asm --mode nasm
 
-      # ===== Upward Restore: Java / Scala / Haskell / Ruby / Go =====
+
+      # ===== Upward Restore =====
       - name: Restore → Java
         run: |
           ./build/spongelang --input input.cpp --output up_java_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.java --mode java
@@ -89,10 +106,11 @@ jobs:
         run: |
           ./build/spongelang --input input.cpp --output up_go_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.go --mode go
 
-      # ===== 아티팩트 업로드 (정상 작동) =====
+
+      # ===== 아티팩트 =====
       - uses: actions/upload-artifact@v4
         with:
-          name: converted-${{ steps.namefix.outputs.repo_name }}-${{ runner.os }}
+          name: output-${{ steps.namefix.outputs.repo_name }}-${{ runner.os }}
           path: |
             down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rs
             down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.asm

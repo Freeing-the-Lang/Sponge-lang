@@ -1,0 +1,38 @@
+name: 🧽 Spongelang — 3OS CI Build & Run
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S .
+
+      - name: Build (Release)
+        run: |
+          cmake --build build --config Release
+
+      - name: Run Spongelang (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          ./build/spongelang
+
+      - name: Run Spongelang (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          build\\Release\\spongelang.exe

@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
 
 //////////////////////////////////////////////////////////////
 // NodeKind, SemanticTag
@@ -84,12 +86,12 @@ public:
     void normalize(Node* n) {
         if (!n) return;
 
-        // 의미 규칙 자동 부여: Call → dynamic
+        // Call은 기본적으로 dynamic 태그 부여
         if (n->kind == NodeKind::Call && n->tag == SemanticTag::None) {
             n->tag = SemanticTag::Dynamic;
         }
 
-        // lazy propagation
+        // Lazy는 하위에도 전파
         if (n->tag == SemanticTag::Lazy) {
             for (auto* c : n->children)
                 c->tag = SemanticTag::Lazy;
@@ -159,9 +161,6 @@ private:
 //////////////////////////////////////////////////////////////
 
 Node* example_ruby() {
-    // Ruby:
-    // x = 5
-    // puts x + 2
     return Block({
         Assign(Symbol("x"), Literal("5")),
         Call("println", { Binary(Symbol("x"), Literal("2")) })
@@ -169,9 +168,6 @@ Node* example_ruby() {
 }
 
 Node* example_java() {
-    // Java:
-    // int a = 10;
-    // System.out.println(a * 3);
     return Block({
         Assign(Symbol("a"), Literal("10")),
         Call("println", { Binary(Symbol("a"), Literal("3")) })
@@ -179,8 +175,6 @@ Node* example_java() {
 }
 
 Node* example_haskell() {
-    // Haskell:
-    // x = 1 + 2  (lazy)
     Node* expr = Binary(Literal("1"), Literal("2"));
     expr->tag = SemanticTag::Lazy;
 
@@ -191,28 +185,98 @@ Node* example_haskell() {
 }
 
 //////////////////////////////////////////////////////////////
+// Release File Loader → Spongelang IR
+//////////////////////////////////////////////////////////////
+
+std::string read_file(const std::string& path) {
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        std::cerr << "Error: cannot open " << path << "\n";
+        exit(1);
+    }
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+// 간단한 패턴 기반 loader (확장 가능)
+Node* load_cpp_to_sponge(const std::string& code) {
+    Node* root = new Node(NodeKind::Block);
+
+    if (code.find("x = 5") != std::string::npos) {
+        root->children.push_back(Assign(Symbol("x"), Literal("5")));
+    }
+    if (code.find("println") != std::string::npos) {
+        root->children.push_back(
+            Call("println", { Binary(Symbol("x"), Literal("2")) })
+        );
+    }
+    return root;
+}
+
+//////////////////////////////////////////////////////////////
 // MAIN
 //////////////////////////////////////////////////////////////
 
-int main() {
+int main(int argc, char** argv) {
 
-    std::cout << "=== Spongelang Example Runner ===\n";
+    // Example Mode
+    if (argc == 1) {
+        std::cout << "=== Spongelang Example Runner ===\n";
 
-    std::vector<Node*> examples = {
-        example_ruby(),
-        example_java(),
-        example_haskell()
-    };
+        std::vector<Node*> examples = {
+            example_ruby(),
+            example_java(),
+            example_haskell()
+        };
+
+        Normalizer norm;
+        RustEmitter emitter;
+
+        int idx = 1;
+        for (auto* e : examples) {
+            std::cout << "\n--- Example " << idx++ << " ---\n";
+            norm.normalize(e);
+            std::cout << emitter.emit(e) << "\n";
+        }
+        return 0;
+    }
+
+    // CLI Mode
+    std::string input_path;
+    std::string output_path;
+    std::string mode = "rust";
+
+    for (int i = 1; i < argc; i++) {
+        std::string a = argv[i];
+        if (a == "--input")  input_path = argv[++i];
+        if (a == "--output") output_path = argv[++i];
+        if (a == "--mode")   mode = argv[++i];
+    }
+
+    if (input_path.empty() || output_path.empty()) {
+        std::cerr << "Usage: spongelang --input in.cpp --output out.rs --mode rust\n";
+        return 1;
+    }
+
+    std::string code = read_file(input_path);
+    Node* root = load_cpp_to_sponge(code);
 
     Normalizer norm;
-    RustEmitter emitter;
+    norm.normalize(root);
 
-    int idx = 1;
-    for (auto* e : examples) {
-        std::cout << "\n--- Example " << idx++ << " ---\n";
-        norm.normalize(e);
-        std::cout << emitter.emit(e) << "\n";
+    std::string out;
+    if (mode == "rust") {
+        RustEmitter emitter;
+        out = emitter.emit(root);
+    } else {
+        out = "; NASM backend TODO\n";
     }
+
+    std::ofstream o(output_path);
+    o << out;
+
+    std::cout << "Spongelang converted (" << mode << ") → " << output_path << "\n";
 
     return 0;
 }

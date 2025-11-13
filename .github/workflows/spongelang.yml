@@ -1,9 +1,7 @@
-name: 🔁 Ultra Matrix — DownConvert + UpRestore 3OS (Rust/NASM/Java/Scala/Haskell/Ruby/Go)
+name: 🔁 Ultra Matrix — DownConvert + UpRestore (3OS, No-C)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * *"
 
 permissions:
   contents: write
@@ -24,12 +22,13 @@ jobs:
         ]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Spongelang Engine
+        uses: actions/checkout@v4
 
       - name: Install deps
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then
-            sudo apt update && sudo apt install -y nasm cmake g++
+            sudo apt update && sudo apt install -y cmake g++ nasm
           fi
           if [ "${{ runner.os }}" = "macOS" ]; then
             brew install cmake nasm
@@ -40,74 +39,65 @@ jobs:
           cmake -B build -S .
           cmake --build build --config Release
 
-      # === 원본 리포 Release 다운로드 ===
-      - name: Get latest release of ${{ matrix.repo }}
+      # 원본 리포 Release 가져오기
+      - name: Get latest release of target repo
         id: rel
         uses: pozetroninc/github-action-get-latest-release@v1
         with:
           repository: ${{ matrix.repo }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download asset
+      - name: Download release asset
         run: |
           curl -L -o input.cpp "${{ steps.rel.outputs.assets_url }}"
 
-      # ====== DOWNWARD: Rust / NASM ======
+      # ==== repo_name 추출 (핵심 FIX) ====
+      - name: Extract repo name
+        id: namefix
+        shell: bash
+        run: |
+          repo_name=$(basename "${{ matrix.repo }}")
+          echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
+
+      # ===== Downward 변환 =====
       - name: Convert → Rust
         run: |
-          ./build/spongelang --input input.cpp --output down_${{ matrix.repo##*/ }}_${{ runner.os }}.rs --mode rust
+          ./build/spongelang --input input.cpp --output down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rs --mode rust
 
       - name: Convert → NASM
         run: |
-          ./build/spongelang --input input.cpp --output down_${{ matrix.repo##*/ }}_${{ runner.os }}.asm --mode nasm
+          ./build/spongelang --input input.cpp --output down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.asm --mode nasm
 
-      # ====== UPWARD RESTORE: Java / Scala / Haskell / Ruby / Go ======
+      # ===== Upward Restore: Java / Scala / Haskell / Ruby / Go =====
       - name: Restore → Java
         run: |
-          ./build/spongelang --input input.cpp --output up_java_${{ matrix.repo##*/ }}_${{ runner.os }}.java --mode java
+          ./build/spongelang --input input.cpp --output up_java_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.java --mode java
 
       - name: Restore → Scala
         run: |
-          ./build/spongelang --input input.cpp --output up_scala_${{ matrix.repo##*/ }}_${{ runner.os }}.scala --mode scala
+          ./build/spongelang --input input.cpp --output up_scala_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.scala --mode scala
 
       - name: Restore → Haskell
         run: |
-          ./build/spongelang --input input.cpp --output up_hs_${{ matrix.repo##*/ }}_${{ runner.os }}.hs --mode haskell
+          ./build/spongelang --input input.cpp --output up_hs_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.hs --mode haskell
 
       - name: Restore → Ruby
         run: |
-          ./build/spongelang --input input.cpp --output up_rb_${{ matrix.repo##*/ }}_${{ runner.os }}.rb --mode ruby
+          ./build/spongelang --input input.cpp --output up_rb_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rb --mode ruby
 
       - name: Restore → Go
         run: |
-          ./build/spongelang --input input.cpp --output up_go_${{ matrix.repo##*/ }}_${{ runner.os }}.go --mode go
+          ./build/spongelang --input input.cpp --output up_go_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.go --mode go
 
-      # ====== 아티팩트 업로드 ======
+      # ===== 아티팩트 업로드 (정상 작동) =====
       - uses: actions/upload-artifact@v4
         with:
-          name: converted-${{ matrix.repo##*/ }}-${{ runner.os }}
+          name: converted-${{ steps.namefix.outputs.repo_name }}-${{ runner.os }}
           path: |
-            down_${{ matrix.repo##*/ }}_${{ runner.os }}.rs
-            down_${{ matrix.repo##*/ }}_${{ runner.os }}.asm
-            up_java_${{ matrix.repo##*/ }}_${{ runner.os }}.java
-            up_scala_${{ matrix.repo##*/ }}_${{ runner.os }}.scala
-            up_hs_${{ matrix.repo##*/ }}_${{ runner.os }}.hs
-            up_rb_${{ matrix.repo##*/ }}_${{ runner.os }}.rb
-            up_go_${{ matrix.repo##*/ }}_${{ runner.os }}.go
-
-      # ====== 원본 리포로 복원 릴리즈 ======
-      - uses: softprops/action-gh-release@v1
-        with:
-          tag_name: "spongelang-ultra-v1"
-          name: "Downconvert + UpRestore (Spongelang Ultra Matrix)"
-          repository: ${{ matrix.repo }}
-          files: |
-            down_${{ matrix.repo##*/ }}_${{ runner.os }}.rs
-            down_${{ matrix.repo##*/ }}_${{ runner.os }}.asm
-            up_java_${{ matrix.repo##*/ }}_${{ runner.os }}.java
-            up_scala_${{ matrix.repo##*/ }}_${{ runner.os }}.scala
-            up_hs_${{ matrix.repo##*/ }}_${{ runner.os }}.hs
-            up_rb_${{ matrix.repo##*/ }}_${{ runner.os }}.rb
-            up_go_${{ matrix.repo##*/ }}_${{ runner.os }}.go
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rs
+            down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.asm
+            up_java_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.java
+            up_scala_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.scala
+            up_hs_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.hs
+            up_rb_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rb
+            up_go_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.go

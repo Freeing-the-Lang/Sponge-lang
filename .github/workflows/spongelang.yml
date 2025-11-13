@@ -1,12 +1,13 @@
-name: 🧽 Spongelang — 3OS CI Build & Run
+name: 🧽 Spongelang — 3OS CI / CLI Test / Release
 
 on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-test:
@@ -27,12 +28,60 @@ jobs:
         run: |
           cmake --build build --config Release
 
-      - name: Run Spongelang (Linux/macOS)
+      # Example Mode 실행
+      - name: Run Example Mode (Linux/Mac)
         if: runner.os != 'Windows'
         run: |
           ./build/spongelang
 
-      - name: Run Spongelang (Windows)
+      - name: Run Example Mode (Windows)
         if: runner.os == 'Windows'
         run: |
           build\\Release\\spongelang.exe
+
+      # CLI 모드 테스트 — 가짜 in.cpp 준비 후 변환
+      - name: Prepare test input
+        run: |
+          echo "x = 5; println(x + 2);" > in.cpp
+
+      - name: Run CLI Mode (Linux/Mac)
+        if: runner.os != 'Windows'
+        run: |
+          ./build/spongelang --input in.cpp --output out.rs --mode rust
+          cat out.rs
+
+      - name: Run CLI Mode (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          build\\Release\\spongelang.exe --input in.cpp --output out.rs --mode rust
+          type out.rs
+
+      - name: Upload rs output artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spongelang-output-${{ matrix.os }}
+          path: out.rs
+
+
+  release:
+    needs: build-test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -B build -S .
+
+      - name: Build Release Binary
+        run: |
+          cmake --build build --config Release
+
+      - name: Upload Binary to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/spongelang

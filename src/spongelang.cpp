@@ -1,8 +1,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <tuple>
-#include <type_traits>
 
 //////////////////////////////////////////////////////////////
 // NodeKind, SemanticTag
@@ -40,7 +38,7 @@ struct Node {
 };
 
 //////////////////////////////////////////////////////////////
-// Factory utilities (문법없는 Node 생성 보조)
+// Factory utilities
 //////////////////////////////////////////////////////////////
 
 Node* Literal(std::string v) {
@@ -86,9 +84,15 @@ public:
     void normalize(Node* n) {
         if (!n) return;
 
-        // 예: 호출(Call)에 동적 의미 부여
+        // 의미 규칙 자동 부여: Call → dynamic
         if (n->kind == NodeKind::Call && n->tag == SemanticTag::None) {
             n->tag = SemanticTag::Dynamic;
+        }
+
+        // lazy propagation
+        if (n->tag == SemanticTag::Lazy) {
+            for (auto* c : n->children)
+                c->tag = SemanticTag::Lazy;
         }
 
         for (auto* c : n->children)
@@ -151,28 +155,64 @@ private:
 };
 
 //////////////////////////////////////////////////////////////
-// MAIN — 실제 Spongelang 엔진 테스트
+// EXAMPLES
+//////////////////////////////////////////////////////////////
+
+Node* example_ruby() {
+    // Ruby:
+    // x = 5
+    // puts x + 2
+    return Block({
+        Assign(Symbol("x"), Literal("5")),
+        Call("println", { Binary(Symbol("x"), Literal("2")) })
+    });
+}
+
+Node* example_java() {
+    // Java:
+    // int a = 10;
+    // System.out.println(a * 3);
+    return Block({
+        Assign(Symbol("a"), Literal("10")),
+        Call("println", { Binary(Symbol("a"), Literal("3")) })
+    });
+}
+
+Node* example_haskell() {
+    // Haskell:
+    // x = 1 + 2  (lazy)
+    Node* expr = Binary(Literal("1"), Literal("2"));
+    expr->tag = SemanticTag::Lazy;
+
+    return Block({
+        Assign(Symbol("x"), expr),
+        Call("println", { Symbol("x") })
+    });
+}
+
+//////////////////////////////////////////////////////////////
+// MAIN
 //////////////////////////////////////////////////////////////
 
 int main() {
 
-    // Ruby 코드 예시:
-    // x = 5
-    // puts x + 2
+    std::cout << "=== Spongelang Example Runner ===\n";
 
-    Node* ast = Block({
-        Assign(Symbol("x"), Literal("5")),
-        Call("println", { Binary(Symbol("x"), Literal("2")) })
-    });
+    std::vector<Node*> examples = {
+        example_ruby(),
+        example_java(),
+        example_haskell()
+    };
 
     Normalizer norm;
-    norm.normalize(ast);
-
     RustEmitter emitter;
-    std::string rustCode = emitter.emit(ast);
 
-    std::cout << "=== Rust Output ===\n";
-    std::cout << rustCode << "\n";
+    int idx = 1;
+    for (auto* e : examples) {
+        std::cout << "\n--- Example " << idx++ << " ---\n";
+        norm.normalize(e);
+        std::cout << emitter.emit(e) << "\n";
+    }
 
     return 0;
 }

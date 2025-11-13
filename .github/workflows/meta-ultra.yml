@@ -34,12 +34,12 @@ jobs:
               if (!res.data.length) break;
 
               for (const repo of res.data) {
-                const name = repo.name.toLowerCase();
+                const n = repo.name.toLowerCase();
 
-                if (name.includes("c-")) continue;
-                if (name.includes("c23")) continue;
-                if (name.includes("tardigrada")) continue;
-                if (name.includes("pure-c")) continue;
+                if (n.includes("c-")) continue;
+                if (n.includes("c23")) continue;
+                if (n.includes("tardigrada")) continue;
+                if (n.includes("pure-c")) continue;
 
                 repos.push(repo.full_name);
               }
@@ -47,13 +47,15 @@ jobs:
               page++;
             }
 
-            core.setOutput("list", JSON.stringify(repos));
+            core.setOutput("repos", JSON.stringify(repos));
             console.log("FOUND REPOS:", repos);
+
 
       - name: Install deps
         shell: bash
         run: |
-          sudo apt update && sudo apt install -y cmake g++ nasm
+          sudo apt update && sudo apt install -y cmake g++ nasm jq
+
 
       - name: Build Spongelang Engine
         shell: bash
@@ -63,37 +65,38 @@ jobs:
 
 
       # ======================================================
-      # LOOP: Ultra-Matrix inside a single workflow
-      # (이게 핵심: meta + ultra-matrix 통합 구조)
+      # Create 3OS + Repo list outputs
       # ======================================================
 
-      - name: Run Ultra-Matrix Transform for Each Repo (3OS)
+      - name: Prepare Matrix Data (repos + OS list)
         id: matrixloop
         uses: actions/github-script@v7
         with:
           script: |
-            const repos = JSON.parse("${{ steps.scan.outputs.list }}");
-            const owner = context.repo.owner;
-            const currentRepo = context.repo.repo;
-
-            // 3OS 매트릭스 정의
+            const repos = JSON.parse(`${{ steps.scan.outputs.repos }}`);
             const OSes = ["ubuntu-latest", "macos-latest", "windows-latest"];
 
-            return { repos, OSes };
-        result-encoding: string
+            core.setOutput("repos", JSON.stringify(repos));
+            core.setOutput("oses",  JSON.stringify(OSes));
+
+            console.log("Repos:", repos);
+            console.log("OSes:", OSes);
 
 
-      - name: Execute ULTRA for each repo + each OS
+      # ======================================================
+      # Dispatch ultra-exec.yml for each repo × OS
+      # ======================================================
+
+      - name: Execute ULTRA for each repo + OS
         shell: bash
         run: |
-          repos=${{ steps.matrixloop.outputs.result }}
-          repos=$(echo "$repos" | jq -r '.repos[]')
-          OSes=$(echo "${{ steps.matrixloop.outputs.result }}" | jq -r '.OSes[]')
+          repos=$(echo '${{ steps.matrixloop.outputs.repos }}' | jq -r '.[]')
+          OSes=$(echo '${{ steps.matrixloop.outputs.oses }}'   | jq -r '.[]')
 
           echo "=== Running Ultra Pipeline ==="
           for repo in $repos; do
             for os in $OSes; do
-              echo "▶ Executing Ultra for: $repo @ $os"
+              echo "▶ Dispatch Ultra-Exec: $repo @ $os"
 
               gh api \
                 -X POST \

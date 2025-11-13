@@ -1,4 +1,4 @@
-name: 🌐 META-ULTRA — Full Auto Scan + 3OS Transform + Auto Release (Freeing-the-Lang)
+name: 🔁 Single-Repo META-ULTRA — 3OS Transform + Auto Release
 
 on:
   workflow_dispatch:
@@ -7,55 +7,25 @@ permissions:
   contents: write
 
 jobs:
-  meta-ultra:
-    runs-on: ubuntu-latest
+  ultra:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - name: Checkout (for Spongelang Engine)
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Scan Freeing-the-Lang Organization (No-C repos)
-        id: scan
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const org = "Freeing-the-Lang";
-
-            let repos = [];
-            let page = 1;
-
-            while (true) {
-              const res = await github.rest.repos.listForOrg({
-                org,
-                per_page: 100,
-                page
-              });
-
-              if (!res.data.length) break;
-
-              for (const repo of res.data) {
-                const n = repo.name.toLowerCase();
-
-                if (n.includes("c-")) continue;
-                if (n.includes("c23")) continue;
-                if (n.includes("tardigrada")) continue;
-                if (n.includes("pure-c")) continue;
-
-                repos.push(repo.full_name);
-              }
-
-              page++;
-            }
-
-            core.setOutput("repos", JSON.stringify(repos));
-            console.log("FOUND REPOS:", repos);
-
 
       - name: Install deps
         shell: bash
         run: |
-          sudo apt update && sudo apt install -y cmake g++ nasm jq
-
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt update && sudo apt install -y cmake g++ nasm jq
+          fi
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            brew install cmake nasm jq
+          fi
 
       - name: Build Spongelang Engine
         shell: bash
@@ -63,48 +33,116 @@ jobs:
           cmake -B build -S .
           cmake --build build --config Release
 
-
-      # ======================================================
-      # Create 3OS + Repo list outputs
-      # ======================================================
-
-      - name: Prepare Matrix Data (repos + OS list)
-        id: matrixloop
+      # ==========================================
+      # Fetch this repo's latest release asset
+      # ==========================================
+      - name: Fetch Latest Release Asset
+        id: rel
         uses: actions/github-script@v7
         with:
           script: |
-            const repos = JSON.parse(`${{ steps.scan.outputs.repos }}`);
-            const OSes = ["ubuntu-latest", "macos-latest", "windows-latest"];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
 
-            core.setOutput("repos", JSON.stringify(repos));
-            core.setOutput("oses",  JSON.stringify(OSes));
+            const r = await github.rest.repos.getLatestRelease({ owner, repo });
+            if (!r.data.assets.length) core.setFailed("❌ No release asset found.");
 
-            console.log("Repos:", repos);
-            console.log("OSes:", OSes);
+            core.setOutput("url", r.data.assets[0].browser_download_url);
+            core.setOutput("tag", r.data.tag_name);
 
+      - name: Download Release Asset
+        run: curl -L -o input.cpp "${{ steps.rel.outputs.url }}"
 
-      # ======================================================
-      # Dispatch ultra-exec.yml for each repo × OS
-      # ======================================================
+      # ==========================================
+      # DOWN → Rust / NASM
+      # ==========================================
+      - name: Downconvert → Rust
+        run: ./build/spongelang --input input.cpp --output out_rust_${{ matrix.os }}.rs --mode rust
 
-      - name: Execute ULTRA for each repo + OS
-        shell: bash
-        run: |
-          repos=$(echo '${{ steps.matrixloop.outputs.repos }}' | jq -r '.[]')
-          OSes=$(echo '${{ steps.matrixloop.outputs.oses }}'   | jq -r '.[]')
+      - name: Downconvert → NASM
+        run: ./build/spongelang --input input.cpp --output out_nasm_${{ matrix.os }}.asm --mode nasm
 
-          echo "=== Running Ultra Pipeline ==="
-          for repo in $repos; do
-            for os in $OSes; do
-              echo "▶ Dispatch Ultra-Exec: $repo @ $os"
+      # ==========================================
+      # UP RESTORE → Java / Scala / Haskell / Ruby / Go
+      # ==========================================
+      - name: Restore → Java
+        run: ./build/spongelang --input input.cpp --output up_java_${{ matrix.os }}.java --mode java
 
-              gh api \
-                -X POST \
-                repos/${{ github.repository }}/actions/workflows/ultra-exec.yml/dispatches \
-                -F ref=main \
-                -F inputs[target_repo]=$repo \
-                -F inputs[target_os]=$os
-            done
-          done
+      - name: Restore → Scala
+        run: ./build/spongelang --input input.cpp --output up_scala_${{ matrix.os }}.scala --mode scala
+
+      - name: Restore → Haskell
+        run: ./build/spongelang --input input.cpp --output up_hs_${{ matrix.os }}.hs --mode haskell
+
+      - name: Restore → Ruby
+        run: ./build/spongelang --input input.cpp --output up_rb_${{ matrix.os }}.rb --mode ruby
+
+      - name: Restore → Go
+        run: ./build/spongelang --input input.cpp --output up_go_${{ matrix.os }}.go --mode go
+
+      # ==========================================
+      # Auto Increment Release Tag
+      # ==========================================
+      - name: Auto Tag
+        id: autotag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const rels = await github.rest.repos.listReleases({ owner, repo });
+            const auto = rels.data.filter(r => r.tag_name.startsWith("spongelang-auto-v"));
+
+            if (!auto.length) return core.setOutput("tag", "spongelang-auto-v1");
+
+            const nums = auto.map(r => parseInt(r.tag_name.replace("spongelang-auto-v","")));
+            const next = Math.max(...nums) + 1;
+
+            core.setOutput("tag", `spongelang-auto-v${next}`);
+
+      # ==========================================
+      # Upload to Release
+      # ==========================================
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.autotag.outputs.tag }}
+          name: "Auto Transform — ${{ steps.autotag.outputs.tag }}"
+          files: |
+            out_rust_${{ matrix.os }}.rs
+            out_nasm_${{ matrix.os }}.asm
+            up_java_${{ matrix.os }}.java
+            up_scala_${{ matrix.os }}.scala
+            up_hs_${{ matrix.os }}.hs
+            up_rb_${{ matrix.os }}.rb
+            up_go_${{ matrix.os }}.go
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ==========================================
+      # Cleanup old auto-v tags
+      # ==========================================
+      - name: Cleanup Old Auto-Tags
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const rels = await github.rest.repos.listReleases({ owner, repo });
+
+            const auto = rels.data
+              .filter(r => r.tag_name.startsWith("spongelang-auto-v"))
+              .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const del = auto.slice(10);
+
+            for (const r of del) {
+              await github.rest.repos.deleteRelease({
+                owner, repo, release_id: r.id
+              });
+              await github.rest.git.deleteRef({
+                owner, repo, ref: `tags/${r.tag_name}`
+              });
+            }

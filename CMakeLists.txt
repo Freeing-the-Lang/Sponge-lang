@@ -5,18 +5,17 @@ project(Spongelang LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 소스 파일 추가
+# src 폴더 자동 포함
 add_executable(spongelang
     src/spongelang.cpp
 )
 
-# 경고 옵션 (필요하면 꺼도 됨)
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR
-    CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+# GCC / Clang 공통 경고 옵션
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(spongelang PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Windows MSVC 옵션
+# MSVC 경고 옵션
 if (MSVC)
     target_compile_options(spongelang PRIVATE /W4)
 endif()

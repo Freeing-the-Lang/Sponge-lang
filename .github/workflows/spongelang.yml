@@ -1,4 +1,4 @@
-name: 🔁 Ultra Matrix — DownConvert + UpRestore (3OS, No-C)
+name: 🌐 META-ULTRA — Full Auto Scan + 3OS Transform + Auto Release (Freeing-the-Lang)
 
 on:
   workflow_dispatch:
@@ -7,115 +7,101 @@ permissions:
   contents: write
 
 jobs:
-  ultra-matrix:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        repo: [
-          "Freeing-the-Lang/Rust-like-Java",
-          "Freeing-the-Lang/Rust-like-ruby",
-          "Freeing-the-Lang/Rust-like-go",
-          "Freeing-the-Lang/Haskell-like-rust",
-          "Freeing-the-Lang/Scala-like-rust"
-        ]
+  meta-ultra:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Spongelang Engine
+      - name: Checkout (for Spongelang Engine)
         uses: actions/checkout@v4
 
-      - name: Install deps
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            sudo apt update && sudo apt install -y cmake g++ nasm
-          fi
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            brew install cmake nasm
-          fi
+      - name: Scan Freeing-the-Lang Organization (No-C repos)
+        id: scan
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const org = "Freeing-the-Lang";
 
-      - name: Build Spongelang
+            let repos = [];
+            let page = 1;
+
+            while (true) {
+              const res = await github.rest.repos.listForOrg({
+                org,
+                per_page: 100,
+                page
+              });
+
+              if (!res.data.length) break;
+
+              for (const repo of res.data) {
+                const name = repo.name.toLowerCase();
+
+                if (name.includes("c-")) continue;
+                if (name.includes("c23")) continue;
+                if (name.includes("tardigrada")) continue;
+                if (name.includes("pure-c")) continue;
+
+                repos.push(repo.full_name);
+              }
+
+              page++;
+            }
+
+            core.setOutput("list", JSON.stringify(repos));
+            console.log("FOUND REPOS:", repos);
+
+      - name: Install deps
+        shell: bash
+        run: |
+          sudo apt update && sudo apt install -y cmake g++ nasm
+
+      - name: Build Spongelang Engine
+        shell: bash
         run: |
           cmake -B build -S .
           cmake --build build --config Release
 
 
-      # === 최신 릴리즈 asset URL 가져오기 (official) ===
-      - name: Get latest release asset URL
-        id: getasset
+      # ======================================================
+      # LOOP: Ultra-Matrix inside a single workflow
+      # (이게 핵심: meta + ultra-matrix 통합 구조)
+      # ======================================================
+
+      - name: Run Ultra-Matrix Transform for Each Repo (3OS)
+        id: matrixloop
         uses: actions/github-script@v7
         with:
           script: |
-            const repo = "${{ matrix.repo }}";
-            const [owner, name] = repo.split("/");
-            const rel = await github.rest.repos.getLatestRelease({
-              owner,
-              repo: name
-            });
+            const repos = JSON.parse("${{ steps.scan.outputs.list }}");
+            const owner = context.repo.owner;
+            const currentRepo = context.repo.repo;
 
-            if (!rel.data.assets.length) {
-              core.setFailed("❌ No release assets found.");
-              return;
-            }
+            // 3OS 매트릭스 정의
+            const OSes = ["ubuntu-latest", "macos-latest", "windows-latest"];
 
-            const asset = rel.data.assets[0];
-            core.setOutput("url", asset.browser_download_url);
+            return { repos, OSes };
+        result-encoding: string
 
 
-      - name: Download asset
-        run: |
-          curl -L -o input.cpp "${{ steps.getasset.outputs.url }}"
-
-      # === repo_name 추출 ===
-      - name: Extract repo name
-        id: namefix
+      - name: Execute ULTRA for each repo + each OS
         shell: bash
         run: |
-          repo_name=$(basename "${{ matrix.repo }}")
-          echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
+          repos=${{ steps.matrixloop.outputs.result }}
+          repos=$(echo "$repos" | jq -r '.repos[]')
+          OSes=$(echo "${{ steps.matrixloop.outputs.result }}" | jq -r '.OSes[]')
 
+          echo "=== Running Ultra Pipeline ==="
+          for repo in $repos; do
+            for os in $OSes; do
+              echo "▶ Executing Ultra for: $repo @ $os"
 
-      # ===== Downward: Rust / NASM =====
-      - name: Convert → Rust
-        run: |
-          ./build/spongelang --input input.cpp --output down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rs --mode rust
-
-      - name: Convert → NASM
-        run: |
-          ./build/spongelang --input input.cpp --output down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.asm --mode nasm
-
-
-      # ===== Upward Restore =====
-      - name: Restore → Java
-        run: |
-          ./build/spongelang --input input.cpp --output up_java_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.java --mode java
-
-      - name: Restore → Scala
-        run: |
-          ./build/spongelang --input input.cpp --output up_scala_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.scala --mode scala
-
-      - name: Restore → Haskell
-        run: |
-          ./build/spongelang --input input.cpp --output up_hs_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.hs --mode haskell
-
-      - name: Restore → Ruby
-        run: |
-          ./build/spongelang --input input.cpp --output up_rb_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rb --mode ruby
-
-      - name: Restore → Go
-        run: |
-          ./build/spongelang --input input.cpp --output up_go_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.go --mode go
-
-
-      # ===== 아티팩트 =====
-      - uses: actions/upload-artifact@v4
-        with:
-          name: output-${{ steps.namefix.outputs.repo_name }}-${{ runner.os }}
-          path: |
-            down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rs
-            down_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.asm
-            up_java_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.java
-            up_scala_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.scala
-            up_hs_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.hs
-            up_rb_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.rb
-            up_go_${{ steps.namefix.outputs.repo_name }}_${{ runner.os }}.go
+              gh api \
+                -X POST \
+                repos/${{ github.repository }}/actions/workflows/ultra-exec.yml/dispatches \
+                -F ref=main \
+                -F inputs[target_repo]=$repo \
+                -F inputs[target_os]=$os
+            done
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

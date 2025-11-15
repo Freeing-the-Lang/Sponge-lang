@@ -1,0 +1,23 @@
+metafile:
+  - key: "language"
+    type: string
+
+  - key: "tokens"
+    type: map
+    value: string
+
+  - key: "operators"
+    type: map
+    value: int
+
+  - key: "evaluate"
+    type: map
+    value: expression
+
+  - key: "ir"
+    type: map
+    value: string
+
+  - key: "bytecode"
+    type: map
+    value: string

@@ -1,7 +1,11 @@
-#include "meta/meta_absorb_loader.hpp"
+#
 #include "meta/meta2_processor.hpp"
 #include "meta/meta_schema.hpp"
-#include "meta_engine.hpp"
+
+
+#include "meta/meta_engine.hpp"
+#include "meta/meta_absorb_loader.hpp"
+#include "meta/meta2_processor.hpp"
 
 using namespace sponge;
 

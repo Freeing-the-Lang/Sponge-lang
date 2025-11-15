@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(Spongelang LANGUAGES CXX)
 
-# C++20 사용
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# src 폴더 자동 포함
+# src 폴더 내 모든 .cpp 자동 포함
+file(GLOB_RECURSE SRC_FILES "src/*.cpp")
+
 add_executable(spongelang
-    src/spongelang.cpp
+    ${SRC_FILES}
 )
 
 # GCC / Clang 공통 경고 옵션

@@ -1,196 +1,37 @@
-name: 🔁 Single-Repo META-ULTRA — 3OS Transform + Auto Release
+name: "SpongeLang — 3OS MetaEngine Build"
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  ultra:
+  build:
+    name: "Build — ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install deps
-        shell: bash
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            sudo apt update && sudo apt install -y cmake g++ nasm jq
-          fi
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            brew install cmake nasm jq
-          fi
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
 
-      - name: Build Spongelang Engine
-        shell: bash
-        run: |
-          cmake -B build -S .
-          cmake --build build --config Release
+      - name: Configure
+        run: cmake -B build -G Ninja
 
-      # ==================================================
-      # STEP 1: Get Latest Release or Create Initial One
-      # ==================================================
-      - name: Get or Create Initial Release
-        id: rel
-        uses: actions/github-script@v7
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            async function ensureInitialRelease() {
-              try {
-                const r = await github.rest.repos.getLatestRelease({ owner, repo });
-                return r.data;
-              } catch (err) {
-                if (err.status === 404) {
-                  const newRel = await github.rest.repos.createRelease({
-                    owner, repo,
-                    tag_name: "spongelang-init",
-                    name: "Initial Auto Release",
-                    body: "Automatically created because no releases existed."
-                  });
-                  return newRel.data;
-                }
-                throw err;
-              }
-            }
-
-            const release = await ensureInitialRelease();
-
-            core.setOutput("tag", release.tag_name);
-
-            if (release.assets.length > 0) {
-              core.setOutput("url", release.assets[0].browser_download_url);
-            } else {
-              core.setOutput("url", "");
-            }
-
-            console.log("Using release:", release.tag_name);
-            console.log("Asset:", release.assets.length ? release.assets[0].browser_download_url : "none");
-
-      # ==================================================
-      # STEP 2: Prepare Input (download asset or create)
-      # ==================================================
-
-      - name: Prepare Input Source
-        run: |
-          if [ -n "${{ steps.rel.outputs.url }}" ]; then
-            echo "Downloading existing asset..."
-            curl -L -o input.cpp "${{ steps.rel.outputs.url }}"
-          else
-            echo "No release asset found. Creating default input.cpp"
-            echo 'int main(){ return 42; }' > input.cpp
-          fi
-
-      # ==================================================
-      # STEP 3: Downconvert Rust / NASM
-      # ==================================================
-
-      - name: Downconvert → Rust
-        run: ./build/spongelang --input input.cpp --output out_rust_${{ matrix.os }}.rs --mode rust
-
-      - name: Downconvert → NASM
-        run: ./build/spongelang --input input.cpp --output out_nasm_${{ matrix.os }}.asm --mode nasm
-
-      # ==================================================
-      # STEP 4: Restore → Java / Scala / Haskell / Ruby / Go
-      # ==================================================
-
-      - name: Restore → Java
-        run: ./build/spongelang --input input.cpp --output up_java_${{ matrix.os }}.java --mode java
-
-      - name: Restore → Scala
-        run: ./build/spongelang --input input.cpp --output up_scala_${{ matrix.os }}.scala --mode scala
-
-      - name: Restore → Haskell
-        run: ./build/spongelang --input input.cpp --output up_hs_${{ matrix.os }}.hs --mode haskell
-
-      - name: Restore → Ruby
-        run: ./build/spongelang --input input.cpp --output up_rb_${{ matrix.os }}.rb --mode ruby
-
-      - name: Restore → Go
-        run: ./build/spongelang --input input.cpp --output up_go_${{ matrix.os }}.go --mode go
-
-      # ==================================================
-      # STEP 5: Auto Increment Tag (spongelang-auto-vN)
-      # ==================================================
-
-      - name: Auto Tag
-        id: autotag
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            const rels = await github.rest.repos.listReleases({ owner, repo });
-            const auto = rels.data.filter(r => r.tag_name.startsWith("spongelang-auto-v"));
-
-            if (!auto.length) {
-              core.setOutput("tag", "spongelang-auto-v1");
-              return;
-            }
-
-            const nums = auto.map(r => parseInt(r.tag_name.replace("spongelang-auto-v","")) || 0);
-            const next = Math.max(...nums) + 1;
-
-            core.setOutput("tag", `spongelang-auto-v${next}`);
-
-      # ==================================================
-      # STEP 6: Upload new release
-      # ==================================================
-
-      - name: Upload Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.autotag.outputs.tag }}
-          name: "Spongelang Auto Transform — ${{ steps.autotag.outputs.tag }}"
-          files: |
-            out_rust_${{ matrix.os }}.rs
-            out_nasm_${{ matrix.os }}.asm
-            up_java_${{ matrix.os }}.java
-            up_scala_${{ matrix.os }}.scala
-            up_hs_${{ matrix.os }}.hs
-            up_rb_${{ matrix.os }}.rb
-            up_go_${{ matrix.os }}.go
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ==================================================
-      # STEP 7: Cleanup old auto tags
-      # ==================================================
-
-      - name: Cleanup Old Auto Tags
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            const rels = await github.rest.repos.listReleases({ owner, repo });
-            const auto = rels.data
-              .filter(r => r.tag_name.startsWith("spongelang-auto-v"))
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-            const del = auto.slice(10);
-
-            for (const r of del) {
-              console.log("Deleting old release:", r.tag_name);
-
-              await github.rest.repos.deleteRelease({
-                owner, repo, release_id: r.id
-              });
-
-              await github.rest.git.deleteRef({
-                owner, repo,
-                ref: `tags/${r.tag_name}`
-              });
-            }
+          name: spongelang-${{ matrix.os }}
+          path: build/spongelang*

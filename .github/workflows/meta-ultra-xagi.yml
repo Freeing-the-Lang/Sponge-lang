@@ -1,3 +1,8 @@
+# SpongeLang + XAGI — Ultra Fullstack 3OS Build and Release
+# 개선 사항 적용:
+# 1. 'build' 작업: 'find' 대신 'spongelang'이라는 특정 바이너리 이름을 검색하여 안정성 향상.
+# 2. 'release' 작업: 모든 아티팩트를 단일 'dist/' 폴더로 이동시켜 깔끔한 릴리스 파일을 생성.
+
 name: "SpongeLang + XAGI — Ultra Fullstack 3OS Build and Release"
 
 on:
@@ -6,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write # 태그 및 릴리스 생성을 위해 'write' 권한이 필요합니다.
 
 jobs:
   auto-tag:
@@ -44,30 +49,37 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Locate Executable
+      - name: Locate Executable (Improved)
         shell: bash
         run: |
           mkdir -p out
-          OS="${{ runner.os }}"
-
-          if [[ "$OS" == "Windows" ]]; then
-            FILE=$(find build -type f -name "*.exe" | head -n 1)
-            OUT="spongelang-windows.exe"
-          elif [[ "$OS" == "macOS" ]]; then
-            FILE=$(find build -type f -exec sh -c 'file "$1" | grep -q "Mach-O" && echo "$1"' _ {} \; | head -n 1)
-            OUT="spongelang-macos"
+          
+          # --- 개선 사항 ---
+          # 'find ... | head' 대신 명시적인 바이너리 이름을 검색합니다.
+          # CMakeLists.txt가 'spongelang' (Win의 경우 'spongelang.exe')을 생성한다고 가정합니다.
+          BIN_NAME="spongelang"
+          OS_NAME="${{ runner.os }}"
+          
+          if [[ "$OS_NAME" == "Windows" ]]; then
+            # Windows: .exe 접미사를 찾고, build/Release 또는 build/ 같은 일반적인 위치를 검색합니다.
+            FILE=$(find build -name "${BIN_NAME}.exe" -type f | head -n 1)
+            OUT="${BIN_NAME}-windows.exe"
           else
-            FILE=$(find build -type f -perm /111 | head -n 1)
-            OUT="spongelang-linux"
+            # Linux & macOS: 실행 권한이 있는 확장자 없는 파일을 찾습니다.
+            FILE=$(find build -name "${BIN_NAME}" -type f -perm /111 | head -n 1)
+            # matrix.os (ubuntu-latest, macos-13)를 사용하여 더 명확한 파일 이름을 만듭니다.
+            OUT="${BIN_NAME}-${{ matrix.os }}" 
           fi
 
           if [[ -z "$FILE" ]]; then
-            echo "No executable found"
+            echo "::error::Could not find binary '${BIN_NAME}' in build directory!"
+            find build -type f -ls # 디버깅을 위해 빌드 디렉토리 파일 목록 출력
             exit 1
           fi
 
+          echo "Found binary: $FILE"
           cp "$FILE" "out/$OUT"
-
+          
       - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
@@ -89,7 +101,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
-          path: bin
+          path: bin # 바이너리가 'bin/' 디렉토리 안에 다운로드됩니다.
 
       - name: Create XAGI Test Script
         shell: bash
@@ -110,8 +122,11 @@ EOF
         run: |
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
+          echo "Running test with: ./bin/$BIN"
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
+          echo "--- XAGI Test Output ---"
           cat xagi/result.log || true
+          echo "------------------------"
 
       - name: Upload XAGI Log
         uses: actions/upload-artifact@v4
@@ -130,7 +145,7 @@ EOF
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-data
+          path: release-data # 모든 아티팩트(bin/, log/)가 이 디렉토리 하위에 다운로드됩니다.
 
       - name: Generate ProofLedger
         shell: bash
@@ -143,10 +158,11 @@ EOF
           echo "RUNNER: $(uname -a)" >> proof/build-info.txt
 
           echo "SHA256 checksums:" > proof/sha256.txt
-          find release-data -type f -exec sha256sum {} \; >> proof/sha256.txt
+          # 'release-data' 하위의 모든 파일을 찾아 체크섬을 계산합니다.
+          find release-data -type f -exec sha256sum {} \; | sort >> proof/sha256.txt
 
           echo "XAGI Test Logs:" > proof/xagi-ledger.txt
-          find release-data -type f -name "result.log" -exec sh -c 'echo "--- $1 ---"; cat "$1"' _ {} \; >> proof/xagi-ledger.txt
+          find release-data -type f -name "result.log" -exec sh -c 'echo "--- $1 ---"; cat "$1"; echo ""' _ {} \; | sort >> proof/xagi-ledger.txt
 
       - name: Upload ProofLedger
         uses: actions/upload-artifact@v4
@@ -165,8 +181,20 @@ EOF
       - name: Download All Artifacts For Release
         uses: actions/download-artifact@v4
         with:
-          path: release-files
+          path: release-files # 모든 아티팩트가 하위 폴더 구조를 유지하며 여기에 다운로드됩니다.
 
+      # --- 개선 사항 ---
+      # 'release-files' 내의 모든 하위 디렉토리(예: spongelang-ubuntu-latest/, xagi-proofledger/)에
+      # 흩어져 있는 파일들을 하나의 'dist/' 폴더로 모읍니다.
+      - name: Flatten Artifacts for Release
+        run: |
+          mkdir dist
+          echo "Flattening all artifacts into ./dist/"
+          find release-files -type f -exec mv {} dist/ \;
+          echo "--- Files for Release ---"
+          ls -l dist
+          echo "-------------------------"
+          
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
@@ -174,10 +202,11 @@ EOF
           name: "SpongeLang + XAGI Release - ${{ needs.auto-tag.outputs.tag }}"
           body: |
             Automated SpongeLang + XAGI Release  
-            - 3OS binaries  
-            - XAGI Logs  
+            - 3OS binaries (Windows, macOS, Linux)
+            - XAGI Test Logs  
             - SHA256 checksums  
-            - ProofLedger  
-          files: release-files/**/*
+            - ProofLedger (build-info.txt, sha256.txt, xagi-ledger.txt)
+          # 'dist/' 디렉토리의 모든 파일을 릴리스에 첨부합니다.
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

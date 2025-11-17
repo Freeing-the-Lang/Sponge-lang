@@ -105,7 +105,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p xagi
-          cat > xagi/test.sp << 'EOF'
+          cat << 'EOF' > xagi/test.sp
 ############################################################
 # XAGI Fullstack Test Script (Auto)
 ############################################################

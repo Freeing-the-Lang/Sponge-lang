@@ -37,11 +37,13 @@ jobs:
         shell: bash
         run: |
           echo "📦 Packaging binary..."
-
           mkdir -p out
 
-          # Find executable (first file with executable permission)
-          FILE=$(find build -maxdepth 2 -type f -perm +111 | head -n 1)
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            FILE=$(find build -maxdepth 3 -type f -name "*.exe" | head -n 1)
+          else
+            FILE=$(find build -maxdepth 3 -type f -perm /111 | head -n 1)
+          fi
 
           if [[ -z "$FILE" ]]; then
             echo "❌ ERROR: No executable found in build/"

@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.out.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +23,8 @@ jobs:
         run: |
           TAG="v$(date +'%Y%m%d%H%M%S')"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          git tag $TAG
-          git push origin $TAG
+          git tag "$TAG"
+          git push origin "$TAG"
           echo "Generated tag: $TAG"
 
 
@@ -31,12 +32,14 @@ jobs:
     name: "Build - ${{ matrix.os }}"
     needs: auto-tag
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
         os: [ubuntu-latest, macos-13, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: lukka/get-cmake@latest
 
       - name: Configure
@@ -49,25 +52,28 @@ jobs:
         shell: bash
         run: |
           mkdir -p out
+          OS="${{ runner.os }}"
 
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          echo "Runner OS: $OS"
+
+          if [[ "$OS" == "Windows" ]]; then
             FILE=$(find build -type f -name "*.exe" | head -n 1)
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          elif [[ "$OS" == "macOS" ]]; then
             FILE=$(find build -type f -exec sh -c 'file "$1" | grep -q "executable" && echo "$1"' _ {} \; | head -n 1)
           else
             FILE=$(find build -type f -perm /111 | head -n 1)
           fi
 
           if [[ -z "$FILE" ]]; then
-            echo "No executable found"
+            echo "❌ No executable found"
             exit 1
           fi
 
-          echo "Executable: $FILE"
+          echo "Executable found: $FILE"
 
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          if [[ "$OS" == "Windows" ]]; then
             cp "$FILE" out/spongelang-windows.exe
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          elif [[ "$OS" == "macOS" ]]; then
             cp "$FILE" out/spongelang-macos
           else
             cp "$FILE" out/spongelang-linux
@@ -85,6 +91,7 @@ jobs:
     name: "XAGI Fullstack Test - ${{ matrix.os }}"
     needs: build
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
         os: [ubuntu-latest, macos-13, windows-latest]
@@ -101,11 +108,8 @@ jobs:
       - name: Create XAGI Test Script
         shell: bash
         run: |
-            mkdir -p xagi
-            cat << 'EOF' > xagi/test.sp
-############################################################
-# XAGI Fullstack Test Script
-############################################################
+          mkdir -p xagi
+          cat << 'EOF' > xagi/test.sp
 print("XAGI Boot")
 print("Loading rules...")
 print("Loaded 3 rules")
@@ -116,11 +120,13 @@ print("XAGI Test Done")
 EOF
 
       - name: Run XAGI Test
+        shell: bash
         run: |
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
-          cat xagi/result.log
+          echo "==== XAGI LOG ===="
+          cat xagi/result.log || true
 
       - name: Upload XAGI Log
         uses: actions/upload-artifact@v4
@@ -154,10 +160,10 @@ EOF
           echo "RUNNER: $(uname -a)" >> proof/build-info.txt
 
           echo "SHA256 checksums:" > proof/sha256.txt
-          find release-data -type f -exec sh -c 'sha256sum "$1" >> proof/sha256.txt' _ {} \;
+          find release-data -type f -exec sha256sum {} \; >> proof/sha256.txt
 
           echo "XAGI Logs:" > proof/xagi-proofledger.txt
-          find release-data -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-proofledger.txt
+          find release-data -type f -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-proofledger.txt
 
       - name: Upload ProofLedger
         uses: actions/upload-artifact@v4
@@ -186,14 +192,14 @@ EOF
           tag_name: ${{ needs.auto-tag.outputs.tag }}
           name: "SpongeLang + XAGI Release - ${{ needs.auto-tag.outputs.tag }}"
           body: |
-            SpongeLang + XAGI automated release.
+            Automated SpongeLang + XAGI Release
 
             Included:
-            - 3OS binaries
-            - XAGI test logs
-            - SHA256 checksums
-            - ProofLedger
-            - build-info
+            - Linux / macOS / Windows binaries
+            - XAGI fullstack test logs
+            - SHA256 checksum list
+            - ProofLedger integrity files
+            - Build info (tag, timestamp, commit)
 
           files: release-files/**/*
         env:

@@ -128,7 +128,7 @@ print("AI Init")
 print("AI THINK: fullstack-test")
 print("AI RESPOND: ok")
 print("XAGI Test Done")
-EOF
+'EOF'
 
       - name: Run XAGI Test
         shell: bash

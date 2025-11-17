@@ -1,4 +1,5 @@
 #include "meta_ir.hpp"
+#include "meta_engine.hpp"
 
 namespace sponge {
 

@@ -8,56 +8,79 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ---------------------------------------
-# src 폴더 전체 자동 스캔 (*.cpp)
-# ---------------------------------------
-file(GLOB_RECURSE SRC_FILES
-    "src/*.cpp"
+# =======================================
+# META ENGINE 모듈 (별도 라이브러리)
+# =======================================
+file(GLOB META_SRC
+    "src/meta/*.cpp"
 )
 
-add_executable(spongelang ${SRC_FILES})
+add_library(meta_engine STATIC ${META_SRC})
 
-# ---------------------------------------
-# include path 자동 등록
-# src 및 src/meta 자동 포함됨
-# ---------------------------------------
-target_include_directories(spongelang PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+target_include_directories(meta_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/meta
 )
 
 # ---------------------------------------
-# GCC / Clang 경고 옵션
+# META 엔진 경고 옵션
 # ---------------------------------------
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(spongelang PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Wno-unused-parameter
-        -Wno-unused-variable
+    target_compile_options(meta_engine PRIVATE
+        -Wall -Wextra -Wpedantic
+        -Wno-unused-parameter -Wno-unused-variable
     )
 endif()
 
+if (MSVC)
+    target_compile_options(meta_engine PRIVATE /W4 /permissive-)
+endif()
+
+# =======================================
+# SPONGELANG 메인 실행 파일
+# =======================================
+file(GLOB_RECURSE CORE_SRC
+    "src/*.cpp"
+)
+
+# meta/*.cpp 제외
+list(FILTER CORE_SRC EXCLUDE REGEX "src/meta/.*")
+
+add_executable(spongelang ${CORE_SRC})
+
+target_include_directories(spongelang PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
 # ---------------------------------------
-# MSVC 경고 옵션
+# CORE 엔진 경고 옵션
 # ---------------------------------------
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(spongelang PRIVATE
+        -Wall -Wextra -Wpedantic
+        -Wno-unused-parameter -Wno-unused-variable
+    )
+endif()
+
 if (MSVC)
     target_compile_options(spongelang PRIVATE /W4 /permissive-)
 endif()
 
 # ---------------------------------------
 # macOS ARM64 특수 옵션
-# 링크 심볼 누락 방지
 # ---------------------------------------
 if (APPLE)
     target_compile_options(spongelang PRIVATE -fvisibility=default)
     target_link_options(spongelang PRIVATE -stdlib=libc++)
 endif()
 
-# ---------------------------------------
-# 빌드 타입 (없으면 Debug됨)
-# ---------------------------------------
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
-endif()
+# =======================================
+# 실행 파일이 META ENGINE 의존
+# =======================================
+target_link_libraries(spongelang PRIVATE meta_engine)
+
+# =======================================
+# Install Target (GitHub Actions용)
+# =======================================
+install(TARGETS spongelang
+    RUNTIME DESTINATION bin
+)

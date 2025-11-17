@@ -1,4 +1,6 @@
 #include "meta_schema.hpp"
+#include "meta_engine.hpp"
+
 #include <fstream>
 #include <sstream>
 

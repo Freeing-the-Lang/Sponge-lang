@@ -21,42 +21,61 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
-      - name: Configure
+      - name: Configure (CMake + Ninja)
         run: cmake -B build -G Ninja
 
-      - name: Build
+      - name: Build (Release Mode)
         run: cmake --build build --config Release
 
-      - name: Package Binary
+      - name: Locate Executable and Package
         shell: bash
         run: |
+          echo "📦 Packaging binary..."
+
           mkdir -p out
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp build/*.exe out/spongelang-windows.exe
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            cp build/* out/spongelang-macos
-          else
-            cp build/* out/spongelang-linux
+
+          # Find executable (first file with executable permission)
+          FILE=$(find build -maxdepth 2 -type f -perm +111 | head -n 1)
+
+          if [[ -z "$FILE" ]]; then
+            echo "❌ ERROR: No executable found in build/"
+            ls -R build
+            exit 1
           fi
 
-      - name: Upload Artifact (for workflow)
+          echo "Found binary: $FILE"
+
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp "$FILE" out/spongelang-windows.exe
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            cp "$FILE" out/spongelang-macos
+          else
+            cp "$FILE" out/spongelang-linux
+          fi
+
+          echo "📦 Output directory:"
+          ls -R out
+
+      - name: Upload Artifact per OS
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
           path: out/*
 
+
   release:
-    name: "Attach binaries to Release"
-    needs: [build]
+    name: "Attach build artifacts to Release"
+    needs: build
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Download all build artifacts
@@ -64,13 +83,14 @@ jobs:
         with:
           path: release-out
 
-      - name: Display artifacts
-        run: ls -R release-out
+      - name: Show release artifacts
+        run: |
+          echo "📦 Release files:"
+          ls -R release-out
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-out/**/*      
+          files: release-out/**/*      
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

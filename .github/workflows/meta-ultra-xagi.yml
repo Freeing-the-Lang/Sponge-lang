@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag-step.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +54,12 @@ jobs:
       - name: Install
         run: cmake --install build --config Release
 
-      - name: Upload Binary
+      - name: Debug check installed files
+        run: |
+          echo "[DEBUG] build/bin listing:"
+          ls -al build/bin || true
+
+      - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
@@ -82,9 +88,13 @@ jobs:
         run: |
           mkdir -p xagi
           cat << 'EOF' > xagi/test.sp
-          println("XAGI FULLSTACK TEST")
-          println("boot ok")
-          println("done")
+          println("=== XAGI TEST START ===")
+          println("Booting...")
+          println("Meta Engine OK")
+          println("Rules Loaded: 3")
+          println("AI THINK: ping")
+          println("AI RESPOND: pong")
+          println("=== XAGI TEST END ===")
           EOF
 
       - name: Run XAGI Test
@@ -93,6 +103,7 @@ jobs:
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
+          echo "---- XAGI OUTPUT (${matrix.os}) ----"
           cat xagi/result.log
 
       - uses: actions/upload-artifact@v4
@@ -110,12 +121,51 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          path: release
+          path: release-temp
 
-      - name: Publish Release
+      - name: Organize release files (remove duplicates)
+        run: |
+          mkdir -p release/linux release/macos release/windows
+
+          # Linux
+          if [ -d "release-temp/spongelang-ubuntu-latest" ]; then
+            cp release-temp/spongelang-ubuntu-latest/* release/linux/
+          fi
+
+          # macOS
+          if [ -d "release-temp/spongelang-macos-13" ]; then
+            cp release-temp/spongelang-macos-13/* release/macos/
+          fi
+
+          # Windows
+          if [ -d "release-temp/spongelang-windows-latest" ]; then
+            cp release-temp/spongelang-windows-latest/* release/windows/
+          fi
+
+          # XAGI test logs
+          cp -r release-temp/xagi-log-* release/
+
+      - name: Zip all builds
+        run: |
+          cd release
+          zip -r linux.zip linux
+          zip -r macos.zip macos
+          zip -r windows.zip windows
+
+      - name: Release Publish
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          files: release/**/*
+          name: "SpongeLang + XAGI Release — ${{ needs.auto-tag.outputs.tag }}"
+          body: |
+            ## SpongeLang + XAGI Full Auto Release
+
+            Included:
+            - Linux / macOS / Windows binaries  
+            - XAGI Automated Test Logs  
+            - Timestamp Auto Tagging
+
+          files: release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

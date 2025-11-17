@@ -143,17 +143,17 @@ jobs:
 
           # Linux
           if [ -d "release-temp/spongelang-ubuntu-latest" ]; then
-            cp release-temp/spongelang-ubuntu-latest/* release/linux/
+            cp -r release-temp/spongelang-ubuntu-latest/* release/linux/
           fi
 
           # macOS
           if [ -d "release-temp/spongelang-macos-13" ]; then
-            cp release-temp/spongelang-macos-13/* release/macos/
+            cp -r release-temp/spongelang-macos-13/* release/macos/
           fi
 
           # Windows
           if [ -d "release-temp/spongelang-windows-latest" ]; then
-            cp release-temp/spongelang-windows-latest/* release/windows/
+            cp -r release-temp/spongelang-windows-latest/* release/windows/
           fi
 
           # XAGI test logs

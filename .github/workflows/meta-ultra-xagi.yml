@@ -1,4 +1,4 @@
-name: "SpongeLang + XAGI - Ultra Fullstack 3OS Build & Release V2"
+name: "SpongeLang + XAGI — Ultra Fullstack 3OS Build and Release"
 
 on:
   push:
@@ -13,38 +13,29 @@ jobs:
     name: "Auto Tag"
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tagstep.outputs.tag }}
+      tag: ${{ steps.out.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Generate Timestamp Tag
-        id: tagstep
+        id: out
         run: |
           TAG="v$(date +'%Y%m%d%H%M%S')"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           git tag "$TAG"
           git push origin "$TAG"
-          echo "Generated Tag: $TAG"
 
   build:
     name: "Build - ${{ matrix.os }}"
     needs: auto-tag
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-13, windows-latest ]
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cache Build
-        uses: actions/cache@v4
-        with:
-          path: build
-          key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
-
       - uses: lukka/get-cmake@latest
 
       - name: Configure
@@ -58,17 +49,16 @@ jobs:
         run: |
           mkdir -p out
           OS="${{ runner.os }}"
-          echo "Runner OS: $OS"
 
           if [[ "$OS" == "Windows" ]]; then
             FILE=$(find build -type f -name "*.exe" | head -n 1)
-            OUTNAME="spongelang-windows.exe"
+            OUT="spongelang-windows.exe"
           elif [[ "$OS" == "macOS" ]]; then
             FILE=$(find build -type f -exec sh -c 'file "$1" | grep -q "Mach-O" && echo "$1"' _ {} \; | head -n 1)
-            OUTNAME="spongelang-macos"
+            OUT="spongelang-macos"
           else
             FILE=$(find build -type f -perm /111 | head -n 1)
-            OUTNAME="spongelang-linux"
+            OUT="spongelang-linux"
           fi
 
           if [[ -z "$FILE" ]]; then
@@ -76,20 +66,18 @@ jobs:
             exit 1
           fi
 
-          cp "$FILE" "out/$OUTNAME"
-          echo "Executable located: $FILE"
+          cp "$FILE" "out/$OUT"
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
-          name: bin-${{ matrix.os }}
+          name: spongelang-${{ matrix.os }}
           path: out/*
 
   xagi-test:
     name: "XAGI Test - ${{ matrix.os }}"
     needs: build
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-13, windows-latest ]
@@ -100,14 +88,14 @@ jobs:
       - name: Download Binary
         uses: actions/download-artifact@v4
         with:
-          name: bin-${{ matrix.os }}
+          name: spongelang-${{ matrix.os }}
           path: bin
 
       - name: Create XAGI Test Script
         shell: bash
         run: |
           mkdir -p xagi
-          cat << 'EOF' > xagi/test.sp
+          cat > xagi/test.sp << 'EOF'
 print("XAGI Boot")
 print("Loading rules...")
 print("Loaded 3 rules")
@@ -122,9 +110,7 @@ EOF
         run: |
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
-          echo "Running XAGI test: $BIN"
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
-          echo "==== XAGI LOG ===="
           cat xagi/result.log || true
 
       - name: Upload XAGI Log
@@ -146,7 +132,7 @@ EOF
         with:
           path: release-data
 
-      - name: Create ProofLedger
+      - name: Generate ProofLedger
         shell: bash
         run: |
           mkdir -p proof
@@ -160,11 +146,7 @@ EOF
           find release-data -type f -exec sha256sum {} \; >> proof/sha256.txt
 
           echo "XAGI Test Logs:" > proof/xagi-ledger.txt
-          find release-data -type f -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-ledger.txt
-
-          echo "Creating final release archive..."
-          mkdir -p dist
-          zip -r dist/full-release.zip release-data proof
+          find release-data -type f -name "result.log" -exec sh -c 'echo "--- $1 ---"; cat "$1"' _ {} \; >> proof/xagi-ledger.txt
 
       - name: Upload ProofLedger
         uses: actions/upload-artifact@v4
@@ -172,40 +154,30 @@ EOF
           name: xagi-proofledger
           path: proof/*
 
-      - name: Upload Final Archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-release
-          path: dist/full-release.zip
-
   release:
-    name: "Publish Release"
+    name: "Create GitHub Release"
     needs: [auto-tag, build, xagi-test, proofledger]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download All Artifacts
+      - name: Download All Artifacts For Release
         uses: actions/download-artifact@v4
         with:
           path: release-files
 
-      - name: Create GitHub Release
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
           name: "SpongeLang + XAGI Release - ${{ needs.auto-tag.outputs.tag }}"
           body: |
-            ## SpongeLang + XAGI Automated Release
-
-            Includes:
-            - Linux / macOS / Windows binaries
-            - XAGI test logs
-            - SHA256 checksum list
-            - ProofLedger integrity files
-            - Build info (tag, timestamp, commit)
-            - Full release archive (zip)
+            Automated SpongeLang + XAGI Release  
+            - 3OS binaries  
+            - XAGI Logs  
+            - SHA256 checksums  
+            - ProofLedger  
           files: release-files/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

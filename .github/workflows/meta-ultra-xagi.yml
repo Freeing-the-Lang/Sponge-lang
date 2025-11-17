@@ -55,7 +55,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Install (CMake Install)
+      - name: Install
         run: cmake --install build --config Release
 
       - name: Upload Binary
@@ -82,23 +82,20 @@ jobs:
         with:
           name: spongelang-${{ matrix.os }}
           path: bin
+
       - name: Create XAGI Script
         shell: bash
         run: |
           mkdir -p xagi
           cat << 'EOF' > xagi/test.sp
           println("====== XAGI FULLSTACK TEST ======")
-          println("[1] SYSTEM: Booting XAGI...")
-          system.sleep(10)
+          println("[1] Booting XAGI...")
           println("OK")
-
-          println("[2] META: Loading modules...")
+          println("[2] Loading meta modules...")
           meta.load("core")
-          println("Meta OK")
-
+          println("meta OK")
           println("====== DONE ======")
           EOF
-
 
       - name: Run XAGI Test
         shell: bash
@@ -106,8 +103,7 @@ jobs:
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
-          echo "------ OUTPUT (${{ matrix.os }}) ------"
-          cat xagi/result.log || true
+          cat xagi/result.log
 
       - uses: actions/upload-artifact@v4
         with:
@@ -137,11 +133,9 @@ jobs:
           body: |
             ## SpongeLang + XAGI Full Auto Release
             - Linux / macOS / Windows binaries  
-            - XAGI Fullstack Test logs  
+            - XAGI Test logs  
             - Auto Timestamp Tag  
-            - Fully automated 3-OS pipeline
 
           files: release-files/**/* 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

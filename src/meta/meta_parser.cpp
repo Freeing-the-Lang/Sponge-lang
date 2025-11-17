@@ -1,4 +1,6 @@
 #include "meta_parser.hpp"
+#include "meta_engine.hpp"
+
 #include <cctype>
 #include <stdexcept>
 

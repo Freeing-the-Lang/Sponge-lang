@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p xagi
-          cat > xagi/test.sp << 'EOF'
+          cat > xagi/test.sp << EOF
 print("XAGI Boot")
 print("Loading rules...")
 print("Loaded 3 rules")
@@ -128,7 +128,7 @@ print("AI Init")
 print("AI THINK: fullstack-test")
 print("AI RESPOND: ok")
 print("XAGI Test Done")
-'EOF'
+EOF
 
       - name: Run XAGI Test
         shell: bash

@@ -1,3 +1,5 @@
+#include "meta_engine.hpp"
+
 #include "meta2_processor.hpp"
 #include <fstream>
 #include <stdexcept>

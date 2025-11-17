@@ -109,7 +109,7 @@ print("AI Init")
 print("AI THINK: test")
 print("AI RESPOND: ok")
 print("XAGI Test Done")
-EOF
+'EOF'
 
       - name: Run XAGI Test
         shell: bash

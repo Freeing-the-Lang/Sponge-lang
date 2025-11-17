@@ -1,4 +1,4 @@
-name: "SpongeLang — FULL AUTO 3OS Build + Release"
+name: "SpongeLang + XAGI — FULL AUTO 3OS Build + Release"
 
 on:
   push:
@@ -10,43 +10,34 @@ permissions:
 
 jobs:
   auto-tag:
-    name: "Auto Generate Tag"
+    name: "Auto Tag"
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tag-step.outputs.tag }}
+      tag: ${{ steps.out.outputs.tag }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Generate timestamp tag
-        id: tag-step
+        id: out
         run: |
           TAG="v$(date +'%Y%m%d%H%M%S')"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Generated Tag: $TAG"
-
-      - name: Push tag
-        run: |
-          git tag ${{ steps.tag-step.outputs.tag }}
-          git push origin ${{ steps.tag-step.outputs.tag }}
+          git tag $TAG
+          git push origin $TAG
+          echo "Generated tag: $TAG"
 
 
   build:
     name: "Build — ${{ matrix.os }}"
     needs: auto-tag
     runs-on: ${{ matrix.os }}
-
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-13, windows-latest]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup CMake
-        uses: lukka/get-cmake@latest
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
 
       - name: Configure
         run: cmake -B build -G Ninja
@@ -54,34 +45,25 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Locate Executable and Package
+      - name: Find executable
         shell: bash
         run: |
           mkdir -p out
-          echo "Searching for binary..."
 
-          # Windows
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            FILE=$(find build -maxdepth 4 -type f -name "*.exe" | head -n 1)
-
-          # macOS → BSD find workaround
+            FILE=$(find build -type f -name "*.exe" | head -n 1)
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            FILE=$(find build -maxdepth 4 -type f \
-                -exec sh -c 'file "$1" | grep -q "executable" && echo "$1"' _ {} \; \
-                | head -n 1)
-
-          # Linux → GNU find
+            FILE=$(find build -type f -exec sh -c 'file "$1" | grep -q "executable" && echo "$1"' _ {} \; | head -n 1)
           else
-            FILE=$(find build -maxdepth 4 -type f -perm /111 | head -n 1)
+            FILE=$(find build -type f -perm /111 | head -n 1)
           fi
 
           if [[ -z "$FILE" ]]; then
-            echo "❌ No executable found!"
-            ls -R build
+            echo "❌ No executable found"
             exit 1
           fi
 
-          echo "Found: $FILE"
+          echo "Binary: $FILE"
 
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             cp "$FILE" out/spongelang-windows.exe
@@ -91,37 +73,71 @@ jobs:
             cp "$FILE" out/spongelang-linux
           fi
 
-          ls -R out
-
-      - name: Upload Artifact
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
           path: out/*
 
 
-  auto-release:
-    name: "Auto Release + Upload"
-    needs: [auto-tag, build]
+  xagi-test:
+    name: "Run XAGI Fullstack Test"
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: spongelang-ubuntu-latest
+          path: bin
+
+      - name: Add XAGI demo script
+        run: |
+          mkdir -p xagi
+          cat > xagi/xagi-full.sp << 'EOF'
+🔥 XAGI FULLSTACK TEST
+print("XAGI Test Start")
+print("Meaning rules loaded")
+print("AI-THINK: demo")
+print("AI-RESPOND: ok")
+print("XAGI Test Done")
+EOF
+
+      - name: Run XAGI Fullstack
+        run: |
+          chmod +x bin/spongelang-linux
+          ./bin/spongelang-linux xagi/xagi-full.sp > xagi/result.log 2>&1
+          echo "XAGI test log:"
+          cat xagi/result.log
+
+      - name: Upload XAGI result
+        uses: actions/upload-artifact@v4
+        with:
+          name: xagi-test-log
+          path: xagi/result.log
+
+
+  auto-release:
+    name: "Release"
+    needs: [auto-tag, build, xagi-test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-files
 
-      - name: Show artifacts
-        run: ls -R release-files
-
-      - name: Create GitHub Release
+      - name: Release upload
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang Release — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang + XAGI — ${{ needs.auto-tag.outputs.tag }}"
           files: release-files/**/* 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

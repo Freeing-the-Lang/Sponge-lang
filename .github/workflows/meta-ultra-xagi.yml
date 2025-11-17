@@ -102,8 +102,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p xagi
-
-cat << 'EOF' > xagi/test.sp
+          cat << 'EOF' > xagi/test.sp
 ############################################################
 # XAGI Fullstack Test Script
 ############################################################

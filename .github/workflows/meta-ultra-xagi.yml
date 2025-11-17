@@ -1,4 +1,4 @@
-name: "SpongeLang + XAGI - ULTRA FULLSTACK 3OS Build and Release"
+name: "SpongeLang + XAGI - Ultra Fullstack 3OS Build and Release"
 
 on:
   push:
@@ -80,6 +80,7 @@ jobs:
           path: out/*
 
 
+
   xagi-fullstack-test:
     name: "XAGI Fullstack Test - ${{ matrix.os }}"
     needs: build
@@ -91,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Built Binary
+      - name: Download Binary
         uses: actions/download-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
@@ -101,11 +102,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p xagi
-          cat << 'EOF' > xagi/test.sp
+
+cat << 'EOF' > xagi/test.sp
 ############################################################
 # XAGI Fullstack Test Script
 ############################################################
-
 print("XAGI Boot")
 print("Loading rules...")
 print("Loaded 3 rules")
@@ -127,6 +128,7 @@ EOF
         with:
           name: xagi-log-${{ matrix.os }}
           path: xagi/result.log
+
 
 
   proofledger:
@@ -152,10 +154,10 @@ EOF
           echo "COMMIT: $(git rev-parse HEAD)" >> proof/build-info.txt
           echo "RUNNER: $(uname -a)" >> proof/build-info.txt
 
-          echo "SHA256 Checksums" > proof/sha256.txt
+          echo "SHA256 checksums:" > proof/sha256.txt
           find release-data -type f -exec sh -c 'sha256sum "$1" >> proof/sha256.txt' _ {} \;
 
-          echo "XAGI Logs" > proof/xagi-proofledger.txt
+          echo "XAGI Logs:" > proof/xagi-proofledger.txt
           find release-data -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-proofledger.txt
 
       - name: Upload ProofLedger
@@ -163,6 +165,7 @@ EOF
         with:
           name: xagi-proofledger
           path: proof/*
+
 
 
   auto-release:
@@ -184,14 +187,14 @@ EOF
           tag_name: ${{ needs.auto-tag.outputs.tag }}
           name: "SpongeLang + XAGI Release - ${{ needs.auto-tag.outputs.tag }}"
           body: |
-            Automatic Release Generated
+            SpongeLang + XAGI automated release.
 
-            Includes:
+            Included:
             - 3OS binaries
-            - XAGI Fullstack test logs
-            - SHA256 proof
+            - XAGI test logs
+            - SHA256 checksums
+            - ProofLedger
             - build-info
-            - proofledger
 
           files: release-files/**/*
         env:

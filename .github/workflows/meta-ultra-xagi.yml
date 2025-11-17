@@ -53,6 +53,12 @@ jobs:
 
       - name: Install
         run: cmake --install build --config Release
+      
+      - name: Copy meta runtime files
+        shell: bash
+        run: |
+          mkdir -p build/bin/meta
+          cp -r src/meta/* build/bin/meta/
 
       - name: Debug check installed files
         shell: bash

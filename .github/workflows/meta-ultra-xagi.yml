@@ -1,4 +1,4 @@
-name: "SpongeLang + XAGI - Ultra Fullstack 3OS Build and Release"
+name: "SpongeLang + XAGI - Ultra Fullstack 3OS Build & Release V2"
 
 on:
   push:
@@ -13,33 +13,42 @@ jobs:
     name: "Auto Tag"
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.out.outputs.tag }}
+      tag: ${{ steps.tagstep.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Generate Timestamp Tag
-        id: out
+        id: tagstep
         run: |
           TAG="v$(date +'%Y%m%d%H%M%S')"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           git tag "$TAG"
           git push origin "$TAG"
-          echo "Generated tag: $TAG"
+          echo "Generated Tag: $TAG"
 
   build:
     name: "Build - ${{ matrix.os }}"
     needs: auto-tag
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-13, windows-latest]
+        os: [ ubuntu-latest, macos-13, windows-latest ]
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache Build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
+
       - uses: lukka/get-cmake@latest
 
       - name: Configure
-        run: cmake -B build -G Ninja
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release
@@ -53,10 +62,13 @@ jobs:
 
           if [[ "$OS" == "Windows" ]]; then
             FILE=$(find build -type f -name "*.exe" | head -n 1)
+            OUTNAME="spongelang-windows.exe"
           elif [[ "$OS" == "macOS" ]]; then
-            FILE=$(find build -type f -exec sh -c 'file "$1" | grep -q "executable" && echo "$1"' _ {} \; | head -n 1)
+            FILE=$(find build -type f -exec sh -c 'file "$1" | grep -q "Mach-O" && echo "$1"' _ {} \; | head -n 1)
+            OUTNAME="spongelang-macos"
           else
             FILE=$(find build -type f -perm /111 | head -n 1)
+            OUTNAME="spongelang-linux"
           fi
 
           if [[ -z "$FILE" ]]; then
@@ -64,29 +76,23 @@ jobs:
             exit 1
           fi
 
-          echo "Executable found: $FILE"
-
-          if [[ "$OS" == "Windows" ]]; then
-            cp "$FILE" out/spongelang-windows.exe
-          elif [[ "$OS" == "macOS" ]]; then
-            cp "$FILE" out/spongelang-macos
-          else
-            cp "$FILE" out/spongelang-linux
-          fi
+          cp "$FILE" "out/$OUTNAME"
+          echo "Executable located: $FILE"
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
-          name: spongelang-${{ matrix.os }}
+          name: bin-${{ matrix.os }}
           path: out/*
 
-  xagi-fullstack-test:
-    name: "XAGI Fullstack Test - ${{ matrix.os }}"
+  xagi-test:
+    name: "XAGI Test - ${{ matrix.os }}"
     needs: build
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-13, windows-latest]
+        os: [ ubuntu-latest, macos-13, windows-latest ]
 
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +100,7 @@ jobs:
       - name: Download Binary
         uses: actions/download-artifact@v4
         with:
-          name: spongelang-${{ matrix.os }}
+          name: bin-${{ matrix.os }}
           path: bin
 
       - name: Create XAGI Test Script
@@ -109,13 +115,14 @@ print("AI Init")
 print("AI THINK: test")
 print("AI RESPOND: ok")
 print("XAGI Test Done")
-'EOF'
+EOF
 
       - name: Run XAGI Test
         shell: bash
         run: |
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
+          echo "Running XAGI test: $BIN"
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
           echo "==== XAGI LOG ===="
           cat xagi/result.log || true
@@ -128,21 +135,22 @@ print("XAGI Test Done")
 
   proofledger:
     name: "Generate ProofLedger"
-    needs: [auto-tag, build, xagi-fullstack-test]
+    needs: [auto-tag, build, xagi-test]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Artifacts
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-data
 
-      - name: Generate Proof Files
+      - name: Create ProofLedger
         shell: bash
         run: |
           mkdir -p proof
+
           echo "TAG: ${{ needs.auto-tag.outputs.tag }}" > proof/build-info.txt
           echo "DATE: $(date -u)" >> proof/build-info.txt
           echo "COMMIT: $(git rev-parse HEAD)" >> proof/build-info.txt
@@ -151,8 +159,12 @@ print("XAGI Test Done")
           echo "SHA256 checksums:" > proof/sha256.txt
           find release-data -type f -exec sha256sum {} \; >> proof/sha256.txt
 
-          echo "XAGI Logs:" > proof/xagi-proofledger.txt
-          find release-data -type f -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-proofledger.txt
+          echo "XAGI Test Logs:" > proof/xagi-ledger.txt
+          find release-data -type f -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-ledger.txt
+
+          echo "Creating final release archive..."
+          mkdir -p dist
+          zip -r dist/full-release.zip release-data proof
 
       - name: Upload ProofLedger
         uses: actions/upload-artifact@v4
@@ -160,9 +172,15 @@ print("XAGI Test Done")
           name: xagi-proofledger
           path: proof/*
 
-  auto-release:
-    name: "Create Release"
-    needs: [auto-tag, build, xagi-fullstack-test, proofledger]
+      - name: Upload Final Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-release
+          path: dist/full-release.zip
+
+  release:
+    name: "Publish Release"
+    needs: [auto-tag, build, xagi-test, proofledger]
     runs-on: ubuntu-latest
 
     steps:
@@ -179,14 +197,15 @@ print("XAGI Test Done")
           tag_name: ${{ needs.auto-tag.outputs.tag }}
           name: "SpongeLang + XAGI Release - ${{ needs.auto-tag.outputs.tag }}"
           body: |
-            Automated SpongeLang + XAGI Release
+            ## SpongeLang + XAGI Automated Release
 
-            Included:
+            Includes:
             - Linux / macOS / Windows binaries
-            - XAGI fullstack test logs
+            - XAGI test logs
             - SHA256 checksum list
             - ProofLedger integrity files
             - Build info (tag, timestamp, commit)
+            - Full release archive (zip)
           files: release-files/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

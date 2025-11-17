@@ -82,23 +82,22 @@ jobs:
         with:
           name: spongelang-${{ matrix.os }}
           path: bin
-
-            - name: Create XAGI Script
+      - name: Create XAGI Script
         shell: bash
         run: |
           mkdir -p xagi
           cat << 'EOF' > xagi/test.sp
-println("====== XAGI FULLSTACK TEST ======")
-println("[1] SYSTEM: Booting XAGI...")
-system.sleep(10)
-println("OK")
+          println("====== XAGI FULLSTACK TEST ======")
+          println("[1] SYSTEM: Booting XAGI...")
+          system.sleep(10)
+          println("OK")
 
-println("[2] META: Loading modules...")
-meta.load("core")
-println("Meta OK")
+          println("[2] META: Loading modules...")
+          meta.load("core")
+          println("Meta OK")
 
-println("====== DONE ======")
-EOF
+          println("====== DONE ======")
+          EOF
 
 
       - name: Run XAGI Test

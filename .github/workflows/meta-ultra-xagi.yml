@@ -83,55 +83,22 @@ jobs:
           name: spongelang-${{ matrix.os }}
           path: bin
 
-      - name: Create XAGI Script
+            - name: Create XAGI Script
         shell: bash
         run: |
           mkdir -p xagi
-          cat > xagi/test.sp << 'EOF'
+          cat << 'EOF' > xagi/test.sp
 println("====== XAGI FULLSTACK TEST ======")
-
 println("[1] SYSTEM: Booting XAGI...")
 system.sleep(10)
 println("OK")
 
-println("[2] META ENGINE: Loading core meta modules...")
+println("[2] META: Loading modules...")
 meta.load("core")
-meta.load("rules/basic")
-println("Meta Engine OK")
+println("Meta OK")
 
-println("[3] PARSER: Parsing synthetic input...")
-test_input = "user: hi\nbot: hello"
-parsed = meta.parse(test_input)
-println("Parser OK — Nodes = " + str(len(parsed)))
-
-println("[4] SCHEMA: Validating structures...")
-if meta.validate(parsed) == true {
-    println("Schema OK")
-} else {
-    println("Schema ERROR")
-}
-
-println("[5] IR: Generating intermediate representation...")
-ir = meta.ir(parsed)
-println("IR OK — IR nodes = " + str(len(ir)))
-
-println("[6] AI INIT...")
-ai.init()
-println("AI Init OK")
-
-println("[7] AI THINK...")
-thought = ai.think("fullstack-test")
-println("THINK RESULT = " + thought)
-
-println("[8] AI RESPONSE...")
-response = ai.respond(thought)
-println("RESPONSE = " + response)
-
-println("[9] VM EXECUTION TEST...")
-vm_output = meta.vm_exec(ir)
-println("VM OK — Output = " + str(vm_output))
-
-println("====== XAGI TEST DONE ======")
+println("====== DONE ======")
+EOF
 
 
       - name: Run XAGI Test

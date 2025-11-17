@@ -101,11 +101,15 @@ jobs:
       - name: Run XAGI Test
         shell: bash
         run: |
-          chmod +x bin/*
-          BIN=$(ls bin | head -n 1)
-          ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
-          echo "---- XAGI OUTPUT (${matrix.os}) ----"
-          cat xagi/result.log
+            chmod +x bin/*
+            BIN=$(ls bin | head -n 1)
+
+            echo "Running test with: $BIN"
+            ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
+
+             echo "---- XAGI OUTPUT (${{ matrix.os }}) ----"
+             cat xagi/result.log
+
 
       - uses: actions/upload-artifact@v4
         with:

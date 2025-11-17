@@ -101,14 +101,17 @@ jobs:
       - name: Run XAGI Test
         shell: bash
         run: |
-            chmod +x bin/*
-            BIN=$(ls bin | head -n 1)
+          chmod +x bin/* || true
 
-            echo "Running test with: $BIN"
-            ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
+          # 🔥 Windows / macOS / Linux 모두 호환되는 이진파일 자동 탐색
+          BIN=$(find bin -maxdepth 1 -type f -name "*.exe" -o -name "spongelang" | head -n 1)
+          echo "Detected binary: $BIN"
 
-             echo "---- XAGI OUTPUT (${{ matrix.os }}) ----"
-             cat xagi/result.log
+          # 🔥 절대 경로 실행 (Windows 경로 문제 방지)
+          "$BIN" ./xagi/test.sp > xagi/result.log 2>&1 || true
+
+          echo "---- XAGI OUTPUT (${{ matrix.os }}) ----"
+          cat xagi/result.log || true
 
 
       - uses: actions/upload-artifact@v4

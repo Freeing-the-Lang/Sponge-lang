@@ -55,6 +55,7 @@ jobs:
         run: cmake --install build --config Release
 
       - name: Debug check installed files
+        shell: bash
         run: |
           echo "[DEBUG] build/bin listing:"
           ls -al build/bin || true

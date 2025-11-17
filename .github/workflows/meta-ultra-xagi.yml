@@ -17,15 +17,14 @@ jobs:
       tag: ${{ steps.tag-step.outputs.tag }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Generate timestamp tag
         id: tag-step
         run: |
           TAG="v$(date +'%Y%m%d%H%M%S')"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Generated Tag: $TAG"
+          echo "Generated: $TAG"
 
       - name: Push tag
         run: |
@@ -46,11 +45,9 @@ jobs:
         os: [ ubuntu-latest, macos-13, windows-latest ]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup CMake
-        uses: lukka/get-cmake@latest
+      - uses: lukka/get-cmake@latest
 
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -58,42 +55,14 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Locate Executable and Package
-        shell: bash
-        run: |
-          mkdir -p out
-          echo "[*] Searching for binary..."
+      - name: Install (CMake Install)
+        run: cmake --install build --config Release
 
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            FILE=$(find build -maxdepth 5 -type f -name "*.exe" | head -n 1)
-            OUTFILE="spongelang-windows.exe"
-
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            FILE=$(find build -maxdepth 5 -type f \
-              -exec sh -c 'file "$1" | grep -q "Mach-O" && echo "$1"' _ {} \; \
-              | head -n 1)
-            OUTFILE="spongelang-macos"
-
-          else
-            FILE=$(find build -maxdepth 5 -type f -perm /111 | head -n 1)
-            OUTFILE="spongelang-linux"
-          fi
-
-          if [[ -z "$FILE" ]]; then
-            echo "❌ No executable found!"
-            ls -R build
-            exit 1
-          fi
-
-          echo "Found binary: $FILE"
-          cp "$FILE" "out/$OUTFILE"
-
-      - name: Upload Artifact
+      - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
-          path: out/*
-
+          path: build/bin/*
 
 
   xagi-test:
@@ -107,16 +76,14 @@ jobs:
         os: [ ubuntu-latest, macos-13, windows-latest ]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download SpongeLang Binary
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
           path: bin
 
-      - name: Create XAGI Test Script
+      - name: Create XAGI Script
         shell: bash
         run: |
           mkdir -p xagi
@@ -135,17 +102,14 @@ EOF
         run: |
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
-          echo "Running XAGI Test using $BIN"
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
-          echo "------ XAGI OUTPUT (${{ matrix.os }}) ------"
+          echo "------ OUTPUT (${{ matrix.os }}) ------"
           cat xagi/result.log || true
 
-      - name: Upload XAGI Log
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: xagi-log-${{ matrix.os }}
           path: xagi/result.log
-
 
 
   auto-release:
@@ -154,30 +118,25 @@ EOF
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: release-files
 
-      - name: Show artifacts
-        run: ls -R release-files
+      - run: ls -R release-files
 
-      - name: Create GitHub Release
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
           name: "SpongeLang + XAGI Release — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang + XAGI Full Auto Release
-
-            Included:
             - Linux / macOS / Windows binaries  
             - XAGI Fullstack Test logs  
-            - Auto Tag / Timestamp  
-            - Fully automated 3OS pipeline
+            - Auto Timestamp Tag  
+            - Fully automated 3-OS pipeline
 
           files: release-files/**/* 
         env:

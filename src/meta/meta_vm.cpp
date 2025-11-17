@@ -1,4 +1,6 @@
 #include "meta_vm.hpp"
+#include "meta_engine.hpp"
+
 #include <stdexcept>
 
 namespace sponge {

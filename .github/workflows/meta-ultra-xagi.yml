@@ -88,14 +88,51 @@ jobs:
         run: |
           mkdir -p xagi
           cat > xagi/test.sp << 'EOF'
-print("XAGI Boot")
-print("Loading rules...")
-print("Loaded 3 rules")
-print("AI Init")
-print("AI THINK: fullstack-test")
-print("AI RESPOND: ok")
-print("XAGI Test Done")
-EOF
+println("====== XAGI FULLSTACK TEST ======")
+
+println("[1] SYSTEM: Booting XAGI...")
+system.sleep(10)
+println("OK")
+
+println("[2] META ENGINE: Loading core meta modules...")
+meta.load("core")
+meta.load("rules/basic")
+println("Meta Engine OK")
+
+println("[3] PARSER: Parsing synthetic input...")
+test_input = "user: hi\nbot: hello"
+parsed = meta.parse(test_input)
+println("Parser OK — Nodes = " + str(len(parsed)))
+
+println("[4] SCHEMA: Validating structures...")
+if meta.validate(parsed) == true {
+    println("Schema OK")
+} else {
+    println("Schema ERROR")
+}
+
+println("[5] IR: Generating intermediate representation...")
+ir = meta.ir(parsed)
+println("IR OK — IR nodes = " + str(len(ir)))
+
+println("[6] AI INIT...")
+ai.init()
+println("AI Init OK")
+
+println("[7] AI THINK...")
+thought = ai.think("fullstack-test")
+println("THINK RESULT = " + thought)
+
+println("[8] AI RESPONSE...")
+response = ai.respond(thought)
+println("RESPONSE = " + response)
+
+println("[9] VM EXECUTION TEST...")
+vm_output = meta.vm_exec(ir)
+println("VM OK — Output = " + str(vm_output))
+
+println("====== XAGI TEST DONE ======")
+
 
       - name: Run XAGI Test
         shell: bash
@@ -141,3 +178,4 @@ EOF
           files: release-files/**/* 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

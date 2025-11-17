@@ -1,4 +1,4 @@
-name: "SpongeLang + XAGI — ULTRA FULLSTACK 3OS Build + Release"
+name: "SpongeLang + XAGI - ULTRA FULLSTACK 3OS Build and Release"
 
 on:
   push:
@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.out.outputs.tag }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -29,10 +28,9 @@ jobs:
 
 
   build:
-    name: "Build — ${{ matrix.os }}"
+    name: "Build - ${{ matrix.os }}"
     needs: auto-tag
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ubuntu-latest, macos-13, windows-latest]
@@ -44,7 +42,7 @@ jobs:
       - name: Configure
         run: cmake -B build -G Ninja
 
-      - name: Build (Release)
+      - name: Build
         run: cmake --build build --config Release
 
       - name: Locate Executable
@@ -61,7 +59,7 @@ jobs:
           fi
 
           if [[ -z "$FILE" ]]; then
-            echo "❌ No executable found"
+            echo "No executable found"
             exit 1
           fi
 
@@ -75,19 +73,17 @@ jobs:
             cp "$FILE" out/spongelang-linux
           fi
 
-      - name: Upload artifact
+      - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
           path: out/*
 
 
-
   xagi-fullstack-test:
-    name: "XAGI Fullstack Test (3OS)"
+    name: "XAGI Fullstack Test - ${{ matrix.os }}"
     needs: build
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ubuntu-latest, macos-13, windows-latest]
@@ -95,52 +91,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Binary
+      - name: Download Built Binary
         uses: actions/download-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
           path: bin
 
-      - name: Create XAGI Fullstack Script
+      - name: Create XAGI Test Script
         shell: bash
         run: |
           mkdir -p xagi
           cat << 'EOF' > xagi/test.sp
 ############################################################
-# XAGI Fullstack Test Script (Auto)
+# XAGI Fullstack Test Script
 ############################################################
 
-print("🔵 XAGI BOOT")
-
-print("MeaningLayer: loading rules...")
-print("Loaded 3 rules.")
-
-print("AI Booting...")
-print("AI State: boot")
-print("AI Memory: 0")
-
-print("🧠 TEST: THINK")
-print("THINK => processed(hello)")
-
-print("🧠 TEST: RESPOND")
-print("RESPOND => reply_to(request)")
-
-print("XAGI Fullstack Test Completed.")
+print("XAGI Boot")
+print("Loading rules...")
+print("Loaded 3 rules")
+print("AI Init")
+print("AI THINK: test")
+print("AI RESPOND: ok")
+print("XAGI Test Done")
 EOF
 
-      - name: Run XAGI test
+      - name: Run XAGI Test
         run: |
           chmod +x bin/*
           BIN=$(ls bin | head -n 1)
           ./bin/$BIN xagi/test.sp > xagi/result.log 2>&1 || true
           cat xagi/result.log
 
-      - name: Upload XAGI logs
+      - name: Upload XAGI Log
         uses: actions/upload-artifact@v4
         with:
           name: xagi-log-${{ matrix.os }}
           path: xagi/result.log
-
 
 
   proofledger:
@@ -151,28 +137,26 @@ EOF
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download artifacts
+      - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-all
+          path: release-data
 
-      - name: Generate SHA256 + build-info + XAGI ProofLedger
+      - name: Generate Proof Files
         shell: bash
         run: |
           mkdir -p proof
 
-          echo "=== BUILD INFO ===" > proof/build-info.txt
-          echo "TAG: ${{ needs.auto-tag.outputs.tag }}" >> proof/build-info.txt
+          echo "TAG: ${{ needs.auto-tag.outputs.tag }}" > proof/build-info.txt
           echo "DATE: $(date -u)" >> proof/build-info.txt
           echo "COMMIT: $(git rev-parse HEAD)" >> proof/build-info.txt
           echo "RUNNER: $(uname -a)" >> proof/build-info.txt
 
-          echo "" >> proof/build-info.txt
-          echo "=== SHA256 ===" > proof/sha256.txt
-          find release-all -type f -exec sh -c 'sha256sum "$1" >> proof/sha256.txt' _ {} \;
+          echo "SHA256 Checksums" > proof/sha256.txt
+          find release-data -type f -exec sh -c 'sha256sum "$1" >> proof/sha256.txt' _ {} \;
 
-          echo "=== XAGI TEST MERGED LOG ===" > proof/xagi-proofledger.txt
-          find release-all -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-proofledger.txt
+          echo "XAGI Logs" > proof/xagi-proofledger.txt
+          find release-data -name "result.log" -exec sh -c 'echo "---"; echo "$1"; cat "$1"' _ {} \; >> proof/xagi-proofledger.txt
 
       - name: Upload ProofLedger
         uses: actions/upload-artifact@v4
@@ -181,38 +165,33 @@ EOF
           path: proof/*
 
 
-
   auto-release:
-    name: "Create Release & Upload All"
+    name: "Create Release"
     needs: [auto-tag, build, xagi-fullstack-test, proofledger]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download ALL artifacts
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-files
 
-      - name: Auto Release (Full)
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang + XAGI — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang + XAGI Release - ${{ needs.auto-tag.outputs.tag }}"
           body: |
-            ## SpongeLang + XAGI Automated Release
+            Automatic Release Generated
 
-            ### 🔥 Included:
-            - 3OS MetaEngine Build
-            - XAGI Fullstack Tests (3OS)
-            - SHA256 ProofLedger
-            - build-info.txt
-            - XAGI multi-run logs
-            - Auto Tag & Auto Release
-
-            ### 🔄 Commit Diff
-            ${{ github.event.head_commit.message }}
+            Includes:
+            - 3OS binaries
+            - XAGI Fullstack test logs
+            - SHA256 proof
+            - build-info
+            - proofledger
 
           files: release-files/**/*
         env:

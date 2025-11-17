@@ -30,6 +30,7 @@ jobs:
           git tag ${{ steps.tag-step.outputs.tag }}
           git push origin ${{ steps.tag-step.outputs.tag }}
 
+
   build:
     name: "Build — ${{ matrix.os }}"
     needs: auto-tag
@@ -50,21 +51,26 @@ jobs:
       - name: Configure
         run: cmake -B build -G Ninja
 
-      - name: Build (Release)
+      - name: Build
         run: cmake --build build --config Release
 
-      - name: Locate Executable & Package
+      - name: Locate Executable and Package
         shell: bash
         run: |
           mkdir -p out
-          echo "📦 Searching for binary..."
+          echo "Searching for binary..."
 
+          # Windows
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             FILE=$(find build -maxdepth 4 -type f -name "*.exe" | head -n 1)
+
+          # macOS → BSD find workaround
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             FILE=$(find build -maxdepth 4 -type f \
                 -exec sh -c 'file "$1" | grep -q "executable" && echo "$1"' _ {} \; \
                 | head -n 1)
+
+          # Linux → GNU find
           else
             FILE=$(find build -maxdepth 4 -type f -perm /111 | head -n 1)
           fi
@@ -75,7 +81,7 @@ jobs:
             exit 1
           fi
 
-          echo "Found binary: $FILE"
+          echo "Found: $FILE"
 
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             cp "$FILE" out/spongelang-windows.exe
@@ -87,34 +93,35 @@ jobs:
 
           ls -R out
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
           path: out/*
 
+
   auto-release:
-    name: "Auto Create Release + Upload"
-    needs: build
+    name: "Auto Release + Upload"
+    needs: [auto-tag, build]
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-files
 
-      - name: Display artifact contents
+      - name: Show artifacts
         run: ls -R release-files
 
-      - name: Create GitHub Release + Upload Assets
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
           name: "SpongeLang Release — ${{ needs.auto-tag.outputs.tag }}"
-          files: release-files/**/*  
+          files: release-files/**/* 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

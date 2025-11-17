@@ -101,8 +101,8 @@ jobs:
       - name: Create XAGI Test Script
         shell: bash
         run: |
-          mkdir -p xagi
-          cat << 'EOF' > xagi/test.sp
+            mkdir -p xagi
+            cat << 'EOF' > xagi/test.sp
 ############################################################
 # XAGI Fullstack Test Script
 ############################################################

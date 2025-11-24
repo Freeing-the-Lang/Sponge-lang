@@ -1,4 +1,4 @@
-name: "SpongeLang — FULL AUTO 3OS Build + XAGI Test + Release"
+name: "SpongeLang — FULL AUTO 3OS Build + Auto META + XAGI Test + Release"
 
 on:
   push:
@@ -10,6 +10,9 @@ permissions:
 
 jobs:
 
+  # ------------------------------------------------------------
+  # AUTO TAG
+  # ------------------------------------------------------------
   auto-tag:
     runs-on: ubuntu-latest
     outputs:
@@ -32,19 +35,25 @@ jobs:
           git push origin ${{ steps.tag-step.outputs.tag }}
 
 
+  # ------------------------------------------------------------
+  # BUILD JOB
+  # ------------------------------------------------------------
   build:
     needs: auto-tag
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-13, windows-latest]
+
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: lukka/get-cmake@latest
 
+      # -----------------------------
+      # Build C++ Project
+      # -----------------------------
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
@@ -53,20 +62,81 @@ jobs:
 
       - name: Install
         run: cmake --install build --config Release
-      
-      - name: Copy meta runtime files
+
+      # -----------------------------
+      # AUTO META GENERATOR
+      # -----------------------------
+      - name: Create Auto Meta Generator Script
         shell: bash
         run: |
-         mkdir -p build/bin/meta
-         cp -r src/meta/* build/bin/meta/
+          mkdir -p tools
+          cat << 'EOF' > tools/generate_meta.py
+#!/usr/bin/env python3
+import re, os, yaml
 
+ROOT = os.path.dirname(os.path.dirname(__file__))
+META_DIR = os.path.join(ROOT, "src", "meta")
 
-      - name: Debug check installed files
+schema_file = os.path.join(META_DIR, "meta_schema.hpp")
+ir_file = os.path.join(META_DIR, "meta_ir.cpp")
+loader_file = os.path.join(META_DIR, "meta_absorb_loader.hpp")
+
+def extract_ir_nodes():
+    if not os.path.exists(ir_file): return []
+    txt = open(ir_file).read()
+    return sorted(set(re.findall(r"IR_([A-Za-z0-9_]+)", txt)))
+
+def extract_absorb_rules():
+    if not os.path.exists(loader_file): return []
+    txt = open(loader_file).read()
+    return sorted(set(re.findall(r'absorb\("([^"]+)"\)', txt)))
+
+def extract_types():
+    if not os.path.exists(schema_file): return []
+    txt = open(schema_file).read()
+    types = re.findall(r"(struct|class)\s+([A-Za-z0-9_]+)", txt)
+    return sorted(set([t[1] for t in types]))
+
+def generate_meta_file(output):
+    ir_nodes = extract_ir_nodes()
+    absorb_rules = extract_absorb_rules()
+    types = extract_types()
+
+    meta = {
+        "meta_version": 1,
+        "language": "sponge",
+        "types": types,
+        "ir_nodes": ir_nodes,
+        "absorb_rules": absorb_rules
+    }
+
+    with open(output, "w") as f:
+        yaml.dump(meta, f, sort_keys=False)
+
+    print("[OK] Generated:", output)
+
+if __name__ == "__main__":
+    os.makedirs("packs", exist_ok=True)
+    generate_meta_file("packs/runtime.meta")
+EOF
+
+      - name: Generate META Pack
+        shell: bash
+        run: |
+          python3 tools/generate_meta.py
+          mkdir -p build/bin/packs
+          cp -r packs/* build/bin/packs/
+
+      # Debug
+      - name: Debug Installed Files
         shell: bash
         run: |
           echo "[DEBUG] build/bin listing:"
           ls -al build/bin || true
 
+      # -----------------------------
+      # Upload Artifact
+      # -----------------------------
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -75,6 +145,9 @@ jobs:
           if-no-files-found: error
 
 
+  # ------------------------------------------------------------
+  # XAGI TEST JOB
+  # ------------------------------------------------------------
   xagi-test:
     needs: build
     strategy:
@@ -85,7 +158,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           name: spongelang-${{ matrix.os }}
@@ -96,30 +168,25 @@ jobs:
         run: |
           mkdir -p xagi
           cat << 'EOF' > xagi/test.sp
-          println("=== XAGI TEST START ===")
-          println("Booting...")
-          println("Meta Engine OK")
-          println("Rules Loaded: 3")
-          println("AI THINK: ping")
-          println("AI RESPOND: pong")
-          println("=== XAGI TEST END ===")
-          EOF
+println("=== XAGI TEST START ===")
+println("Booting...")
+println("Meta Engine OK")
+println("Rules Loaded: 3")
+println("AI THINK: ping")
+println("AI RESPOND: pong")
+println("=== XAGI TEST END ===")
+EOF
 
       - name: Run XAGI Test
         shell: bash
         run: |
           chmod +x bin/* || true
-
-          # 🔥 Windows / macOS / Linux 모두 호환되는 이진파일 자동 탐색
           BIN=$(find bin -maxdepth 1 -type f -name "*.exe" -o -name "spongelang" | head -n 1)
           echo "Detected binary: $BIN"
-
-          # 🔥 절대 경로 실행 (Windows 경로 문제 방지)
           "$BIN" ./xagi/test.sp > xagi/result.log 2>&1 || true
 
           echo "---- XAGI OUTPUT (${{ matrix.os }}) ----"
           cat xagi/result.log || true
-
 
       - uses: actions/upload-artifact@v4
         with:
@@ -127,38 +194,27 @@ jobs:
           path: xagi/result.log
 
 
+  # ------------------------------------------------------------
+  # RELEASE JOB
+  # ------------------------------------------------------------
   auto-release:
     needs: [auto-tag, xagi-test]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           path: release-temp
 
-      - name: Organize release files (remove duplicates)
+      - name: Organize release files
         run: |
           mkdir -p release/linux release/macos release/windows
 
-          # Linux
-          if [ -d "release-temp/spongelang-ubuntu-latest" ]; then
-            cp -r release-temp/spongelang-ubuntu-latest/* release/linux/
-          fi
-
-          # macOS
-          if [ -d "release-temp/spongelang-macos-13" ]; then
-            cp -r release-temp/spongelang-macos-13/* release/macos/
-          fi
-
-          # Windows
-          if [ -d "release-temp/spongelang-windows-latest" ]; then
-            cp -r release-temp/spongelang-windows-latest/* release/windows/
-          fi
-
-          # XAGI test logs
-          cp -r release-temp/xagi-log-* release/
+          cp -r release-temp/spongelang-ubuntu-latest/* release/linux/ || true
+          cp -r release-temp/spongelang-macos-13/* release/macos/ || true
+          cp -r release-temp/spongelang-windows-latest/* release/windows/ || true
+          cp -r release-temp/xagi-log-* release/ || true
 
       - name: Zip all builds
         run: |
@@ -167,20 +223,18 @@ jobs:
           zip -r macos.zip macos
           zip -r windows.zip windows
 
-      - name: Release Publish
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang + XAGI Release — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang + Auto META + XAGI — ${{ needs.auto-tag.outputs.tag }}"
           body: |
-            ## SpongeLang + XAGI Full Auto Release
-
-            Included:
-            - Linux / macOS / Windows binaries  
-            - XAGI Automated Test Logs  
-            - Timestamp Auto Tagging
-
+            ## SpongeLang Full Auto Release
+            Includes:
+            - 3OS binaries
+            - Auto-generated META runtime pack
+            - XAGI automated test logs
+            - Timestamp auto-tag
           files: release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

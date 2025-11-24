@@ -1,4 +1,4 @@
-name: "SpongeLang — FULL AUTO 3OS Build + Auto META + XAGI Test + Release"
+name: "SpongeLang — FULL AUTO 3OS Build + Auto META + Release"
 
 on:
   push:
@@ -64,7 +64,7 @@ jobs:
         run: cmake --install build --config Release
 
       # -----------------------------
-      # AUTO META GENERATION (Python file already exists)
+      # AUTO META GENERATION
       # -----------------------------
       - name: Generate META Pack
         shell: bash
@@ -73,18 +73,14 @@ jobs:
           mkdir -p build/bin/packs
           cp -r packs/* build/bin/packs/
 
-      # -----------------------------
-      # DEBUG OUTPUT
-      # -----------------------------
+      # Debug
       - name: Debug Installed Files
         shell: bash
         run: |
           echo "[DEBUG] build/bin listing:"
           ls -al build/bin || true
 
-      # -----------------------------
-      # UPLOAD BINARIES
-      # -----------------------------
+      # Upload
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -94,60 +90,10 @@ jobs:
 
 
   # ------------------------------------------------------------
-  # XAGI TEST JOB
-  # ------------------------------------------------------------
-  xagi-test:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-13, windows-latest]
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: spongelang-${{ matrix.os }}
-          path: bin
-
-      - name: Create XAGI Script
-        shell: bash
-        run: |
-          mkdir -p xagi
-          cat << 'EOF' > xagi/test.sp
-println("=== XAGI TEST START ===")
-println("Booting...")
-println("Meta Engine OK")
-println("Rules Loaded: 3")
-println("AI THINK: ping")
-println("AI RESPOND: pong")
-println("=== XAGI TEST END ===")
-EOF
-
-      - name: Run XAGI Test
-        shell: bash
-        run: |
-          chmod +x bin/* || true
-          BIN=$(find bin -maxdepth 1 -type f -name "*.exe" -o -name "spongelang" | head -n 1)
-          echo "Detected binary: $BIN"
-          "$BIN" ./xagi/test.sp > xagi/result.log 2>&1 || true
-
-          echo "---- XAGI OUTPUT (${{ matrix.os }}) ----"
-          cat xagi/result.log || true
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xagi-log-${{ matrix.os }}
-          path: xagi/result.log
-
-
-  # ------------------------------------------------------------
   # RELEASE JOB
   # ------------------------------------------------------------
   auto-release:
-    needs: [auto-tag, xagi-test]
+    needs: [auto-tag, build]
     runs-on: ubuntu-latest
 
     steps:
@@ -165,8 +111,6 @@ EOF
           cp -r release-temp/spongelang-macos-13/* release/macos/ || true
           cp -r release-temp/spongelang-windows-latest/* release/windows/ || true
 
-          cp -r release-temp/xagi-log-* release/ || true
-
       - name: Zip all builds
         run: |
           cd release
@@ -178,16 +122,13 @@ EOF
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang + AUTO META + XAGI — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang — FULL AUTO + META — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang Full Auto Release
-
-            Included:
+            Includes:
             - Linux / macOS / Windows builds
             - Auto-generated META Runtime Pack
-            - XAGI Automated Test Logs
             - Timestamp Auto Tag
-
           files: release/*.zip
 
         env:

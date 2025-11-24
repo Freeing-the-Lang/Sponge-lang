@@ -9,42 +9,39 @@ ir_file = os.path.join(META_DIR, "meta_ir.cpp")
 loader_file = os.path.join(META_DIR, "meta_absorb_loader.hpp")
 
 
+def read_file(path):
+    if not os.path.exists(path):
+        return ""
+    # Windows safe UTF-8 load
+    return open(path, encoding="utf-8", errors="ignore").read()
+
+
 def extract_ir_nodes():
-    if not os.path.exists(ir_file): 
-        return []
-    txt = open(ir_file).read()
+    txt = read_file(ir_file)
     return sorted(set(re.findall(r"IR_([A-Za-z0-9_]+)", txt)))
 
 
 def extract_absorb_rules():
-    if not os.path.exists(loader_file): 
-        return []
-    txt = open(loader_file).read()
+    txt = read_file(loader_file)
     return sorted(set(re.findall(r'absorb\("([^"]+)"\)', txt)))
 
 
 def extract_types():
-    if not os.path.exists(schema_file): 
-        return []
-    txt = open(schema_file).read()
+    txt = read_file(schema_file)
     types = re.findall(r"(struct|class)\s+([A-Za-z0-9_]+)", txt)
     return sorted(set([t[1] for t in types]))
 
 
 def generate_meta_file(output):
-    ir_nodes = extract_ir_nodes()
-    absorb_rules = extract_absorb_rules()
-    types = extract_types()
-
     meta = {
         "meta_version": 1,
         "language": "sponge",
-        "types": types,
-        "ir_nodes": ir_nodes,
-        "absorb_rules": absorb_rules,
+        "types": extract_types(),
+        "ir_nodes": extract_ir_nodes(),
+        "absorb_rules": extract_absorb_rules()
     }
 
-    with open(output, "w") as f:
+    with open(output, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, sort_keys=False)
 
     print(f"[OK] Generated META → {output}")

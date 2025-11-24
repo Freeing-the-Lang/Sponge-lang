@@ -8,11 +8,11 @@ on:
 permissions:
   contents: write
 
-jobs:
 
-  # ------------------------------------------------------------
-  # AUTO TAG
-  # ------------------------------------------------------------
+# =====================================================================
+# AUTO TAG JOB
+# =====================================================================
+jobs:
   auto-tag:
     runs-on: ubuntu-latest
     outputs:
@@ -34,10 +34,9 @@ jobs:
           git tag ${{ steps.tag-step.outputs.tag }}
           git push origin ${{ steps.tag-step.outputs.tag }}
 
-
-  # ------------------------------------------------------------
-  # BUILD JOB (3 OS)
-  # ------------------------------------------------------------
+# =====================================================================
+# BUILD JOB (3 OS + META GENERATION)
+# =====================================================================
   build:
     needs: auto-tag
     strategy:
@@ -51,9 +50,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
 
-      # -----------------------------
+      # ------------------------------------------------------------
       # CMAKE BUILD
-      # -----------------------------
+      # ------------------------------------------------------------
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
@@ -63,9 +62,18 @@ jobs:
       - name: Install
         run: cmake --install build --config Release
 
-      # -----------------------------
+      # ------------------------------------------------------------
+      # Install Python + PyYAML (for META generator)
+      # ------------------------------------------------------------
+      - name: Install Python Dependencies
+        shell: bash
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install pyyaml
+
+      # ------------------------------------------------------------
       # AUTO META GENERATION
-      # -----------------------------
+      # ------------------------------------------------------------
       - name: Generate META Pack
         shell: bash
         run: |
@@ -73,14 +81,18 @@ jobs:
           mkdir -p build/bin/packs
           cp -r packs/* build/bin/packs/
 
-      # Debug
+      # ------------------------------------------------------------
+      # DEBUG
+      # ------------------------------------------------------------
       - name: Debug Installed Files
         shell: bash
         run: |
-          echo "[DEBUG] build/bin listing:"
+          echo "[DEBUG] build/bin:"
           ls -al build/bin || true
 
-      # Upload
+      # ------------------------------------------------------------
+      # UPLOAD BUILD ARTIFACTS
+      # ------------------------------------------------------------
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -89,9 +101,9 @@ jobs:
           if-no-files-found: error
 
 
-  # ------------------------------------------------------------
-  # RELEASE JOB
-  # ------------------------------------------------------------
+# =====================================================================
+# RELEASE JOB
+# =====================================================================
   auto-release:
     needs: [auto-tag, build]
     runs-on: ubuntu-latest
@@ -125,11 +137,10 @@ jobs:
           name: "SpongeLang — FULL AUTO + META — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang Full Auto Release
-            Includes:
-            - Linux / macOS / Windows builds
-            - Auto-generated META Runtime Pack
+            Included:
+            - Linux/macOS/Windows binaries
+            - Auto-generated META runtime pack
             - Timestamp Auto Tag
           files: release/*.zip
-
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

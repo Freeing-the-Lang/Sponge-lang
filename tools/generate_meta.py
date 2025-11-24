@@ -12,7 +12,7 @@ loader_file = os.path.join(META_DIR, "meta_absorb_loader.hpp")
 def read_file(path):
     if not os.path.exists(path):
         return ""
-    # Windows safe UTF-8 load
+    # Windows-safe file reading
     return open(path, encoding="utf-8", errors="ignore").read()
 
 
@@ -44,7 +44,8 @@ def generate_meta_file(output):
     with open(output, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, sort_keys=False)
 
-    print(f"[OK] Generated META → {output}")
+    # ASCII only (Windows-safe)
+    print("[OK] Generated META:", output)
 
 
 if __name__ == "__main__":

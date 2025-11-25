@@ -9,9 +9,8 @@ permissions:
   contents: write
 
 
-
 # =====================================================================
-# 1) AUTO TAG GENERATOR
+# 1) AUTO TAG
 # =====================================================================
 jobs:
   auto-tag:
@@ -38,7 +37,7 @@ jobs:
 
 
 # =====================================================================
-# 2) MULTI-OS BUILD JOB
+# 2) BUILD JOB
 # =====================================================================
   build:
     needs: auto-tag
@@ -47,8 +46,8 @@ jobs:
       matrix:
         os: [
           ubuntu-latest,
-          macos-latest,     # Apple Silicon (ARM64)
-          macos-15-intel,   # Intel
+          macos-latest,      # Apple Silicon (ARM64)
+          macos-15-intel,    # Intel macOS
           windows-latest
         ]
 
@@ -73,13 +72,19 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # PEP-668 SAFE PYTHON (venv required on macOS)
+      # PYTHON venv (OS별 activate)
       # ------------------------------------------------------------
       - name: Setup Python Virtualenv
         shell: bash
         run: |
           python3 -m venv venv
-          source venv/bin/activate
+
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            source venv/Scripts/activate
+          else
+            source venv/bin/activate
+          fi
+
           pip install pyyaml
 
 
@@ -89,39 +94,44 @@ jobs:
       - name: Generate META Pack
         shell: bash
         run: |
-          source venv/bin/activate
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            source venv/Scripts/activate
+          else
+            source venv/bin/activate
+          fi
+
           python3 tools/generate_meta.py
           mkdir -p build/meta_packs
           cp -r packs/* build/meta_packs/ 2>/dev/null || true
 
 
       # ------------------------------------------------------------
-      # AUTO-COLLECT EXECUTABLES (4OS 호환)
+      # AUTO COLLECT EXECUTABLES (4OS 모두 지원)
       # ------------------------------------------------------------
       - name: Collect Binaries
         shell: bash
         run: |
           mkdir -p collected_bin
 
-          # Copy common dirs:
+          # Common dirs
           for DIR in build/bin build/Release build; do
             if [ -d "$DIR" ]; then
               cp -r $DIR/* collected_bin/ 2>/dev/null || true
             fi
           done
 
-          # OS-dependent executable search:
+          # OS-dependent executable search
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Windows: exe, dll
-            find build -maxdepth 4 -type f \( -iname "*.exe" -o -iname "*.dll" \) -print0 2>/dev/null \
+            # Windows: exe/dll
+            find build -maxdepth 4 -type f \( -iname "*.exe" -o -iname "*.dll" \) -print0 \
               | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
           else
-            # Linux/macOS: detect real executables
-            find build -maxdepth 4 -type f -perm -u+x -print0 2>/dev/null \
+            # Linux/macOS: real executable files
+            find build -maxdepth 4 -type f -perm -u+x -print0 \
               | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
           fi
 
-          echo "[DEBUG] Final collected_bin contents:"
+          echo "[DEBUG] collected_bin contents:"
           ls -al collected_bin || true
 
 
@@ -141,7 +151,7 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # UPLOAD
+      # UPLOAD ARTIFACT
       # ------------------------------------------------------------
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -161,22 +171,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: release-tmp
 
 
       # ------------------------------------------------------------
-      # ORGANIZE BY OS
+      # ORGANIZE FILES
       # ------------------------------------------------------------
       - name: Organize Release Files
         run: |
           mkdir -p release/linux release/macos-arm release/macos-intel release/windows
 
-          cp -r release-tmp/spongelang-linux/*       release/linux/       2>/dev/null || true
-          cp -r release-tmp/spongelang-macos-arm/*   release/macos-arm/   2>/dev/null || true
-          cp -r release-tmp/spongelang-macos-intel/* release/macos-intel/ 2>/dev/null || true
-          cp -r release-tmp/spongelang-windows/*     release/windows/     2>/dev/null || true
+          cp -r release-tmp/spongelang-linux/*        release/linux/       2>/dev/null || true
+          cp -r release-tmp/spongelang-macos-arm/*    release/macos-arm/   2>/dev/null || true
+          cp -r release-tmp/spongelang-macos-intel/*  release/macos-intel/ 2>/dev/null || true
+          cp -r release-tmp/spongelang-windows/*      release/windows/     2>/dev/null || true
 
 
       # ------------------------------------------------------------
@@ -207,8 +218,8 @@ jobs:
             - macOS Intel
             - Windows
             - Auto META Pack
-            - Auto CMake Build
-            - Auto Tagging
+            - CMake/Ninja Build
+            - Timestamp Auto Tag
           files: release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

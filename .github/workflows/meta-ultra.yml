@@ -1,4 +1,4 @@
-name: "SpongeLang — FULL AUTO 4OS Build (ARM+Intel macOS) + META + Release"
+name: "SpongeLang — FULL AUTO 4OS Build + META + Release"
 
 on:
   push:
@@ -9,8 +9,9 @@ permissions:
   contents: write
 
 
+
 # =====================================================================
-# AUTO TAG GENERATOR
+# AUTO TAG JOB
 # =====================================================================
 jobs:
   auto-tag:
@@ -37,7 +38,7 @@ jobs:
 
 
 # =====================================================================
-# MULTI-OS BUILD JOB (Linux, macOS ARM, macOS Intel, Windows)
+# BUILD JOB (Linux, macOS ARM, macOS Intel, Windows)
 # =====================================================================
   build:
     needs: auto-tag
@@ -46,8 +47,8 @@ jobs:
       matrix:
         os: [
           ubuntu-latest,
-          macos-latest,     # ARM64
-          macos-15-intel,   # Intel
+          macos-latest,     # ARM64 macOS 15
+          macos-15-intel,   # Intel macOS 15
           windows-latest
         ]
 
@@ -71,52 +72,54 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # Install Python Dependencies
+      # PEP-668 SAFE PYTHON ENV
       # ------------------------------------------------------------
-      - name: Install Python Dependencies
+      - name: Setup Python Virtualenv (PEP-668 Safe)
         shell: bash
         run: |
-          python3 -m pip install --upgrade pip
+          python3 -m venv venv
+          source venv/bin/activate
           pip install pyyaml
 
 
       # ------------------------------------------------------------
-      # META Pack Generation
+      # META PACK GENERATION
       # ------------------------------------------------------------
       - name: Generate META Pack
         shell: bash
         run: |
+          source venv/bin/activate
           python3 tools/generate_meta.py
           mkdir -p build/meta_packs
           cp -r packs/* build/meta_packs/ 2>/dev/null || true
 
 
       # ------------------------------------------------------------
-      # AUTO COLLECT BINARIES (ARM/Intel/Windows/Linux 공통)
+      # AUTO COLLECT BINARIES (모든 OS 지원)
       # ------------------------------------------------------------
       - name: Collect Binaries
         shell: bash
         run: |
           mkdir -p collected_bin
 
-          # Try common locations
+          # Try common locations:
           for DIR in build/bin build/Release build; do
             if [ -d "$DIR" ]; then
               cp -r $DIR/* collected_bin/ 2>/dev/null || true
             fi
           done
 
-          # Also find stray executables
+          # Capture stray built executables:
           find build -maxdepth 4 -type f -executable -print0 | while IFS= read -r -d '' f; do
             cp "$f" collected_bin/ 2>/dev/null || true
           done
 
-          echo "[DEBUG] collected_bin content:"
+          echo "[DEBUG] Final collected_bin contents:"
           ls -al collected_bin || true
 
 
       # ------------------------------------------------------------
-      # Map OS to Stable Name
+      # STABLE OS NAME MAPPING
       # ------------------------------------------------------------
       - name: Normalize OS Name
         id: osname
@@ -140,7 +143,7 @@ jobs:
 
 
 # =====================================================================
-# FINAL RELEASE JOB
+# RELEASE JOB
 # =====================================================================
   auto-release:
     needs: [auto-tag, build]
@@ -152,23 +155,24 @@ jobs:
         with:
           path: release-tmp
 
+
       # ------------------------------------------------------------
-      # ORGANIZE RELEASE FILES
+      # ORGANIZE BY OS
       # ------------------------------------------------------------
-      - name: Organize Release Files
+      - name: Organize release files
         run: |
           mkdir -p release/linux release/macos-arm release/macos-intel release/windows
 
-          cp -r release-tmp/spongelang-linux/*        release/linux/       2>/dev/null || true
-          cp -r release-tmp/spongelang-macos-arm/*    release/macos-arm/   2>/dev/null || true
-          cp -r release-tmp/spongelang-macos-intel/*  release/macos-intel/ 2>/dev/null || true
-          cp -r release-tmp/spongelang-windows/*      release/windows/     2>/dev/null || true
+          cp -r release-tmp/spongelang-linux/*       release/linux/       2>/dev/null || true
+          cp -r release-tmp/spongelang-macos-arm/*   release/macos-arm/   2>/dev/null || true
+          cp -r release-tmp/spongelang-macos-intel/* release/macos-intel/ 2>/dev/null || true
+          cp -r release-tmp/spongelang-windows/*     release/windows/     2>/dev/null || true
 
 
       # ------------------------------------------------------------
       # ZIP ALL TARGETS
       # ------------------------------------------------------------
-      - name: ZIP All
+      - name: ZIP All Builds
         run: |
           cd release
           zip -r linux.zip linux
@@ -178,13 +182,13 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # PUBLISH RELEASE
+      # CREATE RELEASE
       # ------------------------------------------------------------
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang — AUTO 4OS META Release — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang — FULL AUTO META 4OS — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang FULL AUTO Release
             Included:
@@ -192,8 +196,8 @@ jobs:
             - macOS ARM (Apple Silicon)
             - macOS Intel
             - Windows
-            - Auto META pack
-            - Full CMake build pipeline
+            - Auto META pack included
+            - CMake/Ninja Build
             - Timestamp Auto Tag
           files: release/*.zip
         env:

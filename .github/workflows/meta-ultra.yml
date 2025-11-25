@@ -11,7 +11,7 @@ permissions:
 
 
 # =====================================================================
-# AUTO TAG JOB
+# 1) AUTO TAG GENERATOR
 # =====================================================================
 jobs:
   auto-tag:
@@ -38,7 +38,7 @@ jobs:
 
 
 # =====================================================================
-# BUILD JOB (Linux, macOS ARM, macOS Intel, Windows)
+# 2) MULTI-OS BUILD JOB
 # =====================================================================
   build:
     needs: auto-tag
@@ -47,8 +47,8 @@ jobs:
       matrix:
         os: [
           ubuntu-latest,
-          macos-latest,     # ARM64 macOS 15
-          macos-15-intel,   # Intel macOS 15
+          macos-latest,     # Apple Silicon (ARM64)
+          macos-15-intel,   # Intel
           windows-latest
         ]
 
@@ -57,6 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
+
 
       # ------------------------------------------------------------
       # CMAKE BUILD
@@ -72,9 +73,9 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # PEP-668 SAFE PYTHON ENV
+      # PEP-668 SAFE PYTHON (venv required on macOS)
       # ------------------------------------------------------------
-      - name: Setup Python Virtualenv (PEP-668 Safe)
+      - name: Setup Python Virtualenv
         shell: bash
         run: |
           python3 -m venv venv
@@ -95,31 +96,37 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # AUTO COLLECT BINARIES (모든 OS 지원)
+      # AUTO-COLLECT EXECUTABLES (4OS 호환)
       # ------------------------------------------------------------
       - name: Collect Binaries
         shell: bash
         run: |
           mkdir -p collected_bin
 
-          # Try common locations:
+          # Copy common dirs:
           for DIR in build/bin build/Release build; do
             if [ -d "$DIR" ]; then
               cp -r $DIR/* collected_bin/ 2>/dev/null || true
             fi
           done
 
-          # Capture stray built executables:
-          find build -maxdepth 4 -type f -executable -print0 | while IFS= read -r -d '' f; do
-            cp "$f" collected_bin/ 2>/dev/null || true
-          done
+          # OS-dependent executable search:
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            # Windows: exe, dll
+            find build -maxdepth 4 -type f \( -iname "*.exe" -o -iname "*.dll" \) -print0 2>/dev/null \
+              | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
+          else
+            # Linux/macOS: detect real executables
+            find build -maxdepth 4 -type f -perm -u+x -print0 2>/dev/null \
+              | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
+          fi
 
           echo "[DEBUG] Final collected_bin contents:"
           ls -al collected_bin || true
 
 
       # ------------------------------------------------------------
-      # STABLE OS NAME MAPPING
+      # OS NAME NORMALIZATION
       # ------------------------------------------------------------
       - name: Normalize OS Name
         id: osname
@@ -133,6 +140,9 @@ jobs:
           esac
 
 
+      # ------------------------------------------------------------
+      # UPLOAD
+      # ------------------------------------------------------------
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -143,7 +153,7 @@ jobs:
 
 
 # =====================================================================
-# RELEASE JOB
+# 3) RELEASE JOB
 # =====================================================================
   auto-release:
     needs: [auto-tag, build]
@@ -159,7 +169,7 @@ jobs:
       # ------------------------------------------------------------
       # ORGANIZE BY OS
       # ------------------------------------------------------------
-      - name: Organize release files
+      - name: Organize Release Files
         run: |
           mkdir -p release/linux release/macos-arm release/macos-intel release/windows
 
@@ -170,9 +180,9 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # ZIP ALL TARGETS
+      # ZIP ALL
       # ------------------------------------------------------------
-      - name: ZIP All Builds
+      - name: ZIP Builds
         run: |
           cd release
           zip -r linux.zip linux
@@ -182,7 +192,7 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # CREATE RELEASE
+      # RELEASE
       # ------------------------------------------------------------
       - name: Publish Release
         uses: softprops/action-gh-release@v2
@@ -191,14 +201,14 @@ jobs:
           name: "SpongeLang — FULL AUTO META 4OS — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang FULL AUTO Release
-            Included:
+            Includes:
             - Linux
             - macOS ARM (Apple Silicon)
             - macOS Intel
             - Windows
-            - Auto META pack included
-            - CMake/Ninja Build
-            - Timestamp Auto Tag
+            - Auto META Pack
+            - Auto CMake Build
+            - Auto Tagging
           files: release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

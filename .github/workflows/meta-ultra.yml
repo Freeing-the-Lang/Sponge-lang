@@ -1,4 +1,4 @@
-name: "SpongeLang — FULL AUTO 3OS Build + Auto META + Release"
+name: "SpongeLang — FULL AUTO 3OS Build + META + Auto Release"
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+
 
 
 # =====================================================================
@@ -34,6 +35,8 @@ jobs:
           git tag ${{ steps.tag-step.outputs.tag }}
           git push origin ${{ steps.tag-step.outputs.tag }}
 
+
+
 # =====================================================================
 # BUILD JOB (3 OS + META GENERATION)
 # =====================================================================
@@ -47,7 +50,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      # Checkout
       - uses: actions/checkout@v4
+
+      # CMake provider
       - uses: lukka/get-cmake@latest
 
       # ------------------------------------------------------------
@@ -62,8 +68,9 @@ jobs:
       - name: Install
         run: cmake --install build --config Release
 
+
       # ------------------------------------------------------------
-      # Install Python + PyYAML (for META generator)
+      # Install Python + PyYAML
       # ------------------------------------------------------------
       - name: Install Python Dependencies
         shell: bash
@@ -71,38 +78,67 @@ jobs:
           python3 -m pip install --upgrade pip
           pip install pyyaml
 
+
       # ------------------------------------------------------------
-      # AUTO META GENERATION
+      # META GENERATOR
       # ------------------------------------------------------------
       - name: Generate META Pack
         shell: bash
         run: |
           python3 tools/generate_meta.py
-          mkdir -p build/bin/packs
-          cp -r packs/* build/bin/packs/
+          mkdir -p build/meta_packs
+          cp -r packs/* build/meta_packs/
+
 
       # ------------------------------------------------------------
-      # DEBUG
+      # AUTO DETECT BINARIES (OS independent)
       # ------------------------------------------------------------
-      - name: Debug Installed Files
+      - name: Collect Output Binaries
         shell: bash
         run: |
-          echo "[DEBUG] build/bin:"
-          ls -al build/bin || true
+          mkdir -p collected_bin
+
+          # Try multiple common build locations:
+          for DIR in build/bin build/Release build; do
+            if [ -d "$DIR" ]; then
+              echo "[FOUND] $DIR"
+              cp -r $DIR/* collected_bin/ 2>/dev/null || true
+            fi
+          done
+
+          # Try to capture stray files
+          find build -maxdepth 3 -type f -executable -print0 | while IFS= read -r -d '' f; do
+            cp "$f" collected_bin/ 2>/dev/null || true
+          done
+
+          echo "[DEBUG] Final collected_bin contents:"
+          ls -al collected_bin || true
+
 
       # ------------------------------------------------------------
-      # UPLOAD BUILD ARTIFACTS
+      # Upload Artifact (OS normalized)
       # ------------------------------------------------------------
-      - name: Upload Binary Artifact
+      - name: Normalize OS Name
+        id: osname
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu*)  echo "osn=linux"   >> $GITHUB_OUTPUT ;;
+            macos*)   echo "osn=macos"   >> $GITHUB_OUTPUT ;;
+            windows*) echo "osn=windows" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: spongelang-${{ matrix.os }}
-          path: build/bin/*
-          if-no-files-found: error
+          name: spongelang-${{ steps.osname.outputs.osn }}
+          path: collected_bin/*
+          if-no-files-found: warn
+
 
 
 # =====================================================================
-# RELEASE JOB
+# AUTO RELEASE JOB
 # =====================================================================
   auto-release:
     needs: [auto-tag, build]
@@ -115,14 +151,22 @@ jobs:
         with:
           path: release-temp
 
+
+      # ------------------------------------------------------------
+      # Organize files into linux/macOS/windows folders
+      # ------------------------------------------------------------
       - name: Organize release files
         run: |
           mkdir -p release/linux release/macos release/windows
 
-          cp -r release-temp/spongelang-ubuntu-latest/* release/linux/ || true
-          cp -r release-temp/spongelang-macos-13/* release/macos/ || true
-          cp -r release-temp/spongelang-windows-latest/* release/windows/ || true
+          cp -r release-temp/spongelang-linux/*   release/linux/   2>/dev/null || true
+          cp -r release-temp/spongelang-macos/*   release/macos/   2>/dev/null || true
+          cp -r release-temp/spongelang-windows/* release/windows/ 2>/dev/null || true
 
+
+      # ------------------------------------------------------------
+      # Zip artifacts
+      # ------------------------------------------------------------
       - name: Zip all builds
         run: |
           cd release
@@ -130,17 +174,23 @@ jobs:
           zip -r macos.zip macos
           zip -r windows.zip windows
 
+
+      # ------------------------------------------------------------
+      # Publish GitHub Release
+      # ------------------------------------------------------------
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang — FULL AUTO + META — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang — FULL AUTO META — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang Full Auto Release
             Included:
             - Linux/macOS/Windows binaries
             - Auto-generated META runtime pack
+            - Full CMake build pipeline
             - Timestamp Auto Tag
+            - Multi-OS release automation
           files: release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

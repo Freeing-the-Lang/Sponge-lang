@@ -1,4 +1,4 @@
-name: "SpongeLang — FULL AUTO 4OS Build + META + Release"
+name: "SpongeLang — FULL AUTO 4OS + META + ProofLedger + SHA256 Release"
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
 
+env:
+  BUILD_TYPE: Release
 
 # =====================================================================
 # 1) AUTO TAG
@@ -37,133 +39,165 @@ jobs:
 
 
 # =====================================================================
-# 2) BUILD JOB
+# 2) 4OS BUILD
 # =====================================================================
   build:
     needs: auto-tag
     strategy:
       fail-fast: false
       matrix:
-        os: [
-          ubuntu-latest,
-          macos-latest,      # Apple Silicon (ARM64)
-          macos-15-intel,    # Intel macOS
-          windows-latest
-        ]
+        os: [ubuntu-latest, macos-latest, macos-13, windows-latest]
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-      - uses: lukka/get-cmake@latest
-
 
       # ------------------------------------------------------------
-      # CMAKE BUILD
+      # Setup CMake (Official)
       # ------------------------------------------------------------
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
+
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 
       - name: Build
-        run: cmake --build build --config Release
+        shell: bash
+        run: cmake --build build --config ${BUILD_TYPE}
 
       - name: Install
-        run: cmake --install build --config Release
+        shell: bash
+        run: cmake --install build --config ${BUILD_TYPE}
 
 
       # ------------------------------------------------------------
-      # PYTHON venv (OS별 activate)
+      # PYTHON venv (Windows 포함 완전 호환)
       # ------------------------------------------------------------
-      - name: Setup Python Virtualenv
+      - name: Setup Python & venv
+        run: |
+          python -m venv venv
+
+        shell: bash
+
+      - name: Activate venv & install deps (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          python3 -m venv venv
+          source venv/bin/activate
+          pip install pyyaml
 
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source venv/Scripts/activate
-          else
-            source venv/bin/activate
-          fi
-
+      - name: Activate venv & install deps (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./venv/Scripts/Activate.ps1
           pip install pyyaml
 
 
       # ------------------------------------------------------------
       # META PACK GENERATION
       # ------------------------------------------------------------
-      - name: Generate META Pack
+      - name: Generate META Pack (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source venv/Scripts/activate
-          else
-            source venv/bin/activate
-          fi
-
+          source venv/bin/activate
           python3 tools/generate_meta.py
           mkdir -p build/meta_packs
           cp -r packs/* build/meta_packs/ 2>/dev/null || true
 
+      - name: Generate META Pack (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./venv/Scripts/Activate.ps1
+          python tools/generate_meta.py
+          mkdir build/meta_packs -ea SilentlyContinue
+          Copy-Item -Path packs\* -Destination build/meta_packs -Recurse -ErrorAction SilentlyContinue
+
 
       # ------------------------------------------------------------
-      # AUTO COLLECT EXECUTABLES (4OS 모두 지원)
+      # COLLECT BINARIES (4OS AUTO)
       # ------------------------------------------------------------
-      - name: Collect Binaries
+      - name: Collect Binaries (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p collected_bin
 
-          # Common dirs
+          # Possible dirs
           for DIR in build/bin build/Release build; do
             if [ -d "$DIR" ]; then
               cp -r $DIR/* collected_bin/ 2>/dev/null || true
             fi
           done
 
-          # OS-dependent executable search
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Windows: exe/dll
-            find build -maxdepth 4 -type f \( -iname "*.exe" -o -iname "*.dll" \) -print0 \
-              | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
-          else
-            # Linux/macOS: real executable files
-            find build -maxdepth 4 -type f -perm -u+x -print0 \
-              | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
-          fi
+          # Executables only
+          find build -maxdepth 4 -type f -perm -u+x -print0 \
+            | while IFS= read -r -d '' f; do cp "$f" collected_bin/ || true; done
 
-          echo "[DEBUG] collected_bin contents:"
+          echo "Collected binaries:"
           ls -al collected_bin || true
+
+      - name: Collect Binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path collected_bin | Out-Null
+
+          # Copy typical build dirs
+          foreach ($d in @("build/bin","build/Release","build")) {
+            if (Test-Path $d) {
+              Copy-Item "$d\*" collected_bin -Recurse -ErrorAction SilentlyContinue
+            }
+          }
+
+          # Find .exe / .dll
+          Get-ChildItem -Path build -Recurse -Include *.exe,*.dll |
+            ForEach-Object { Copy-Item $_.FullName collected_bin -ErrorAction SilentlyContinue }
+
+          Write-Host "Collected binaries:"
+          Get-ChildItem collected_bin
 
 
       # ------------------------------------------------------------
-      # OS NAME NORMALIZATION
+      # OS NORMALIZATION
       # ------------------------------------------------------------
       - name: Normalize OS Name
         id: osname
         shell: bash
         run: |
           case "${{ matrix.os }}" in
-            ubuntu*)        echo "osn=linux"       >> $GITHUB_OUTPUT ;;
-            macos-latest)   echo "osn=macos-arm"   >> $GITHUB_OUTPUT ;;
-            macos-15-intel) echo "osn=macos-intel" >> $GITHUB_OUTPUT ;;
-            windows*)       echo "osn=windows"     >> $GITHUB_OUTPUT ;;
+            ubuntu*)      echo "osn=linux"       >> $GITHUB_OUTPUT ;;
+            macos-latest) echo "osn=macos-arm"   >> $GITHUB_OUTPUT ;;
+            macos-13)     echo "osn=macos-intel" >> $GITHUB_OUTPUT ;;
+            windows*)     echo "osn=windows"     >> $GITHUB_OUTPUT ;;
           esac
 
 
       # ------------------------------------------------------------
-      # UPLOAD ARTIFACT
+      # Package OS Build
       # ------------------------------------------------------------
+      - name: Package Build
+        shell: bash
+        run: |
+          mkdir -p package/${{ steps.osname.outputs.osn }}
+          cp -r collected_bin package/${{ steps.osname.outputs.osn }}/
+          cp -r build/meta_packs package/${{ steps.osname.outputs.osn }}/ 2>/dev/null || true
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: spongelang-${{ steps.osname.outputs.osn }}
-          path: collected_bin/*
+          path: package/${{ steps.osname.outputs.osn }}
           if-no-files-found: warn
 
 
 
 # =====================================================================
-# 3) RELEASE JOB
+# 3) RELEASE + SHA256 + PROOFLEDGER
 # =====================================================================
   auto-release:
     needs: [auto-tag, build]
@@ -178,9 +212,10 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # ORGANIZE FILES
+      # ORGANIZE BY OS
       # ------------------------------------------------------------
       - name: Organize Release Files
+        shell: bash
         run: |
           mkdir -p release/linux release/macos-arm release/macos-intel release/windows
 
@@ -191,9 +226,10 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # ZIP ALL
+      # ZIP BY OS
       # ------------------------------------------------------------
       - name: ZIP Builds
+        shell: bash
         run: |
           cd release
           zip -r linux.zip linux
@@ -203,23 +239,65 @@ jobs:
 
 
       # ------------------------------------------------------------
-      # RELEASE
+      # SHA256 PACK
+      # ------------------------------------------------------------
+      - name: Generate SHA256
+        shell: bash
+        run: |
+          mkdir -p release/SHA256
+          cd release
+
+          for f in linux.zip macos-arm.zip macos-intel.zip windows.zip; do
+            sha256sum "$f" > "SHA256/${f}.sha256"
+          done
+
+
+      # ------------------------------------------------------------
+      # PROOFLEDGER
+      # ------------------------------------------------------------
+      - name: Generate ProofLedger
+        shell: bash
+        run: |
+          cd release
+          {
+            echo "SpongeLang ProofLedger"
+            echo "Timestamp: $(date -u)"
+            echo "Tag: ${{ needs.auto-tag.outputs.tag }}"
+            echo "Commit: $(git rev-parse HEAD)"
+            echo ""
+            echo "SHA256 Proof:"
+            cat SHA256/linux.zip.sha256
+            cat SHA256/macos-arm.zip.sha256
+            cat SHA256/macos-intel.zip.sha256
+            cat SHA256/windows.zip.sha256
+            echo ""
+            echo "Contributor:"
+            echo "- GitHub Actions Bot"
+          } > proofledger.txt
+
+
+      # ------------------------------------------------------------
+      # CREATE RELEASE
       # ------------------------------------------------------------
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.auto-tag.outputs.tag }}
-          name: "SpongeLang — FULL AUTO META 4OS — ${{ needs.auto-tag.outputs.tag }}"
+          name: "SpongeLang — FULL AUTO META + ProofLedger + SHA256 — ${{ needs.auto-tag.outputs.tag }}"
           body: |
             ## SpongeLang FULL AUTO Release
             Includes:
-            - Linux
-            - macOS ARM (Apple Silicon)
-            - macOS Intel
-            - Windows
-            - Auto META Pack
-            - CMake/Ninja Build
-            - Timestamp Auto Tag
-          files: release/*.zip
+            - Linux / macOS ARM / macOS Intel / Windows
+            - META Packs
+            - SHA256 Proof Packs
+            - ProofLedger
+            - Auto Timestamp Tag
+          files: |
+            release/linux.zip
+            release/macos-arm.zip
+            release/macos-intel.zip
+            release/windows.zip
+            release/SHA256/*.sha256
+            release/proofledger.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
